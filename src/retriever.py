@@ -20,6 +20,7 @@ from src.epic_indexer import embed_texts
 _epic_indices: dict = {}   # mbti → (faiss_index, list[dict])
 _rag_index = None
 _rag_chunks = None
+_pref_embs_cache: dict = {}   # mbti → (prefs list, np.ndarray)
 
 
 def load_epic_index(mbti: str):
@@ -108,17 +109,22 @@ def epic_retrieve(query: str, mbti: str, top_k: int = TOP_K) -> dict:
         all_prefs = json.load(f)
     prefs = all_prefs[mbti]["preferences"]
 
+    # Cache preference embeddings per MBTI (computed once, reused every query)
+    if mbti not in _pref_embs_cache:
+        _pref_embs_cache[mbti] = embed_texts(prefs)
+    pref_embs = _pref_embs_cache[mbti]
+
     t0 = time.perf_counter()
 
     # Embed query
     query_emb = embed_texts([query])[0]
 
-    # Find top matching preference → augment query
-    pref_embs = embed_texts(prefs)
+    # Find top matching preference → augment query (reuse cached pref_embs)
     pref_sims = np.dot(pref_embs, query_emb)
-    top_pref = prefs[int(np.argmax(pref_sims))]
+    top_idx   = int(np.argmax(pref_sims))
+    top_pref  = prefs[top_idx]
 
-    aug_emb = query_emb + embed_texts([top_pref])[0]
+    aug_emb = query_emb + pref_embs[top_idx]   # no re-embedding!
     aug_emb = aug_emb / (np.linalg.norm(aug_emb) + 1e-9)
 
     # Search
