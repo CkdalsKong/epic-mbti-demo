@@ -8,35 +8,15 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from src.llm_client import call_llm
 
 
-EPIC_SYSTEM = """\
-You are a helpful assistant. You answer questions in a style and tone that matches
-the user's personality type ({mbti} — {label}: {description}).
-Use the retrieved documents below to ground your answer, applying the interpretation
-guidance provided for each document.
-Be specific and concrete. Match the voice and values of this personality type."""
-
-EPIC_USER = """\
-Personality: {mbti} ({label})
-
-Retrieved documents:
-{context}
-
-Question: {question}
-
-Answer in the voice and style of someone with the {mbti} personality type."""
-
-
-RAG_SYSTEM = """\
+SHARED_SYSTEM = """\
 You are a helpful assistant. Answer the question using the retrieved documents below.
 Give a thorough, practical response with specific advice. Use 3-5 paragraphs."""
 
-RAG_USER = """\
+SHARED_USER = """\
 Retrieved documents:
 {context}
 
-Question: {question}
-
-Answer with specific, actionable advice based on the documents above."""
+Question: {question}"""
 
 
 def format_epic_context(docs: list[dict]) -> str:
@@ -68,21 +48,12 @@ def generate_epic(
     docs: list[dict],
     backend: str | None = None,
 ) -> str:
+    # Same prompt as RAG — difference is in the docs (instruction-augmented)
     context = format_epic_context(docs)
-    system = EPIC_SYSTEM.format(
-        mbti=mbti,
-        label=mbti_meta["label"],
-        description=mbti_meta["description"],
-    )
-    user = EPIC_USER.format(
-        mbti=mbti,
-        label=mbti_meta["label"],
-        context=context,
-        question=query,
-    )
+    user = SHARED_USER.format(context=context, question=query)
     return call_llm(
         messages=[{"role": "user", "content": user}],
-        system=system,
+        system=SHARED_SYSTEM,
         max_tokens=512,
         temperature=0.7,
         backend=backend,
@@ -95,10 +66,10 @@ def generate_rag(
     backend: str | None = None,
 ) -> str:
     context = format_rag_context(docs)
-    user = RAG_USER.format(context=context, question=query)
+    user = SHARED_USER.format(context=context, question=query)
     return call_llm(
         messages=[{"role": "user", "content": user}],
-        system=RAG_SYSTEM,
+        system=SHARED_SYSTEM,
         max_tokens=512,
         temperature=0.7,
         backend=backend,
