@@ -312,44 +312,98 @@ st.session_state.query = query
 run = st.button("⚡  Generate Personalized Response", type="primary",
                 disabled=not query.strip(), use_container_width=True)
 
-# ─── Run pipeline ─────────────────────────────────────────────────────────────
+# ─── Run pipeline (parallel, show first-ready first) ─────────────────────────
 
 if run and query.strip():
     from src.retriever import epic_retrieve, rag_retrieve
     from src.generator import generate_epic, generate_rag
+    from concurrent.futures import ThreadPoolExecutor, as_completed
 
-    with st.spinner("Retrieving and generating..."):
-        epic_r = epic_retrieve(query, mbti)
-        rag_r  = rag_retrieve(query)
+    st.session_state.result = None  # clear old result
 
-        t0 = time.perf_counter()
-        epic_resp = (
-            generate_epic(query, mbti, meta, epic_r["docs"], backend=backend)
-            if epic_r.get("docs")
-            else f"⚠️ EPIC index for {mbti} not found."
+    # Placeholders — rendered immediately, filled as results arrive
+    st.markdown("<hr class='divider'>", unsafe_allow_html=True)
+    col_e_live, col_r_live = st.columns(2)
+
+    def _panel_header(col, title, subtitle, col_color):
+        col.markdown(
+            f'<div class="method-header">'
+            f'  <div class="method-dot" style="background:{col_color}"></div>'
+            f'  <div><div class="method-name" style="color:{col_color}">{title}</div>'
+            f'  <div class="method-sub">{subtitle}</div></div></div>',
+            unsafe_allow_html=True,
         )
-        epic_gen_ms = round((time.perf_counter() - t0) * 1000, 1)
 
+    _panel_header(col_e_live,
+                  f'EPIC <span style="font-size:0.72rem;font-weight:400;color:#3a5a7a">(Ours)</span>',
+                  "Persona-aware indexing · preference-augmented retrieval",
+                  color)
+    _panel_header(col_r_live,
+                  'Plain RAG <span style="font-size:0.72rem;font-weight:400;color:#3a5a7a">(Baseline)</span>',
+                  "No persona · vanilla retrieval · generic response",
+                  "#6a8aaa")
+
+    epic_ph = col_e_live.empty()
+    rag_ph  = col_r_live.empty()
+
+    epic_ph.markdown('<div class="response-box"><span class="response-placeholder">⏳ Generating…</span></div>', unsafe_allow_html=True)
+    rag_ph.markdown( '<div class="response-box"><span class="response-placeholder">⏳ Generating…</span></div>', unsafe_allow_html=True)
+
+    def run_epic():
+        r = epic_retrieve(query, mbti)
         t0 = time.perf_counter()
-        rag_resp = (
-            generate_rag(query, rag_r["docs"], backend=backend)
-            if rag_r.get("docs")
-            else "⚠️ RAG index not found."
-        )
-        rag_gen_ms = round((time.perf_counter() - t0) * 1000, 1)
+        resp = generate_epic(query, mbti, meta, r["docs"], backend=backend) if r.get("docs") else f"⚠️ EPIC index for {mbti} not found."
+        return {"response": resp, "docs": r.get("docs",[]),
+                "retr_ms": r.get("latency_ms",0), "gen_ms": round((time.perf_counter()-t0)*1000,1),
+                "top_pref": r.get("top_preference","")}
+
+    def run_rag():
+        r = rag_retrieve(query)
+        t0 = time.perf_counter()
+        resp = generate_rag(query, r["docs"], backend=backend) if r.get("docs") else "⚠️ RAG index not found."
+        return {"response": resp, "docs": r.get("docs",[]),
+                "retr_ms": r.get("latency_ms",0), "gen_ms": round((time.perf_counter()-t0)*1000,1)}
+
+    epic_result, rag_result = None, None
+
+    def _render_epic(data, ph):
+        retr, gen = data["retr_ms"], data["gen_ms"]
+        pref_html = f'<div class="pref-match">🎯 {data["top_pref"][:75]}…</div>' if data.get("top_pref") else ""
+        chips = (f'<div style="display:flex;gap:6px;margin-bottom:8px">'
+                 f'<div class="mchip"><span class="mchip-label">Retrieval</span><span class="mchip-value">{retr} ms</span></div>'
+                 f'<div class="mchip"><span class="mchip-label">Generation</span><span class="mchip-value">{gen} ms</span></div>'
+                 f'<div class="mchip"><span class="mchip-label">Docs</span><span class="mchip-value">{len(data["docs"])}</span></div>'
+                 f'</div>')
+        resp_html = data["response"].replace("\n", "<br>")
+        ph.markdown(chips + pref_html + f'<div class="response-box">{resp_html}</div>', unsafe_allow_html=True)
+
+    def _render_rag(data, ph):
+        retr, gen = data["retr_ms"], data["gen_ms"]
+        chips = (f'<div style="display:flex;gap:6px;margin-bottom:8px">'
+                 f'<div class="mchip"><span class="mchip-label">Retrieval</span><span class="mchip-value">{retr} ms</span></div>'
+                 f'<div class="mchip"><span class="mchip-label">Generation</span><span class="mchip-value">{gen} ms</span></div>'
+                 f'<div class="mchip"><span class="mchip-label">Docs</span><span class="mchip-value">{len(data["docs"])}</span></div>'
+                 f'</div>')
+        resp_html = data["response"].replace("\n", "<br>")
+        ph.markdown(chips + '<div style="height:29px"></div>' + f'<div class="response-box" style="border-color:#141e2a">{resp_html}</div>', unsafe_allow_html=True)
+
+    with ThreadPoolExecutor(max_workers=2) as ex:
+        futures = {ex.submit(run_epic): "epic", ex.submit(run_rag): "rag"}
+        for fut in as_completed(futures):
+            tag  = futures[fut]
+            data = fut.result()
+            if tag == "epic":
+                epic_result = data
+                _render_epic(data, epic_ph)
+            else:
+                rag_result = data
+                _render_rag(data, rag_ph)
 
     st.session_state.result = {
         "query": query, "mbti": mbti,
-        "epic": {
-            "response": epic_resp, "docs": epic_r.get("docs", []),
-            "retr_ms": epic_r.get("latency_ms", 0), "gen_ms": epic_gen_ms,
-            "top_pref": epic_r.get("top_preference", ""),
-        },
-        "rag": {
-            "response": rag_resp, "docs": rag_r.get("docs", []),
-            "retr_ms": rag_r.get("latency_ms", 0), "gen_ms": rag_gen_ms,
-        },
+        "epic": epic_result, "rag": rag_result,
     }
+    st.rerun()
 
 # ─── Always-visible side-by-side panels ───────────────────────────────────────
 
