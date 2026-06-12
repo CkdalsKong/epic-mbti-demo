@@ -239,32 +239,33 @@ try:
     compress_pct = epic_n / total_n if total_n else 0
     mb_compress  = f"{epic_mb/rag_mb*100:.1f}%" if rag_mb and epic_mb else "—"
 
-    st.markdown(
-        f'<div class="metric-bar">'
-        f'  <div><div class="stat-val" style="color:{color}">{epic_n:,}</div>'
-        f'      <div class="stat-lbl">EPIC Chunks</div></div>'
-        f'  <div style="color:#1a2535">│</div>'
-        f'  <div><div class="stat-val" style="color:#6a8aaa">{rag_n:,}</div>'
-        f'      <div class="stat-lbl">RAG Chunks</div></div>'
-        f'  <div style="color:#1a2535">│</div>'
-        f'  <div><div class="stat-val" style="color:#4caf82">{compress}</div>'
-        f'      <div class="stat-lbl">Chunk Compression</div></div>'
-        f'  <div style="color:#1a2535">│</div>'
-        f'  <div><div class="stat-val" style="color:{color}">{epic_mb} MB</div>'
-        f'      <div class="stat-lbl">EPIC Index Size</div></div>'
-        f'  <div style="color:#1a2535">│</div>'
-        f'  <div><div class="stat-val" style="color:#6a8aaa">{rag_mb} MB</div>'
-        f'      <div class="stat-lbl">RAG Index Size</div></div>'
-        f'  <div style="color:#1a2535">│</div>'
-        f'  <div><div class="stat-val" style="color:#e8a838">{mb_compress}</div>'
-        f'      <div class="stat-lbl">Memory Savings</div></div>'
-        + (f'  <div style="color:#1a2535">│</div>'
-           f'  <div><div class="stat-val" style="color:#a0a0a0">{gpu_mb} MB</div>'
-           f'      <div class="stat-lbl">GPU Mem Used</div></div>'
-           if gpu_mb else "")
-        + f'</div>',
-        unsafe_allow_html=True,
+    def stat(val, label, clr):
+        return (f'<div style="text-align:center;min-width:90px">'
+                f'<div style="font-size:1.15rem;font-weight:800;color:{clr}">{val}</div>'
+                f'<div style="font-size:0.62rem;color:#3a5a7a;text-transform:uppercase;'
+                f'letter-spacing:0.5px;margin-top:1px">{label}</div></div>')
+
+    div = '<div style="color:#1a2535;font-size:1rem">│</div>'
+
+    row1 = (
+        f'<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;'
+        f'background:#060b12;border:1px solid #111e2a;border-radius:12px;'
+        f'padding:0.8rem 1.2rem;margin-bottom:6px">'
+        + stat(f"{epic_n:,}",  "EPIC Chunks",       color)
+        + div
+        + stat(f"{rag_n:,}",   "RAG Chunks",        "#6a8aaa")
+        + div
+        + stat(compress,       "Chunk Compression", "#4caf82")
+        + div
+        + stat(f"{epic_mb} MB","EPIC Index Size",   color)
+        + div
+        + stat(f"{rag_mb} MB", "RAG Index Size",    "#6a8aaa")
+        + div
+        + stat(mb_compress,    "Memory Savings",    "#e8a838")
+        + (div + stat(f"{gpu_mb} MB", "GPU Mem", "#a0a0a0") if gpu_mb else "")
+        + '</div>'
     )
+    st.markdown(row1, unsafe_allow_html=True)
 
     # Dual compression bar: chunks + memory
     if compress_pct > 0 or (epic_mb and rag_mb):
