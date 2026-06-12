@@ -50,6 +50,12 @@ def load_rag_index():
     return _rag_index, _rag_chunks
 
 
+def _mb(path) -> float:
+    """File size in MB, 0 if not found."""
+    p = Path(path)
+    return round(p.stat().st_size / 1024 / 1024, 1) if p.exists() else 0.0
+
+
 def get_index_stats(mbti: str) -> dict:
     epic_index, epic_meta = load_epic_index(mbti)
     rag_index, rag_chunks = load_rag_index()
@@ -60,12 +66,32 @@ def get_index_stats(mbti: str) -> dict:
         with open(stats_file) as f:
             epic_stats = json.load(f)
 
+    # File sizes
+    epic_faiss_mb = _mb(EPIC_INDEX_DIR / mbti / "index.faiss")
+    epic_meta_mb  = _mb(EPIC_INDEX_DIR / mbti / "kept.jsonl")
+    rag_faiss_mb  = _mb(RAG_INDEX_DIR / "index.faiss")
+
+    # GPU memory (if available)
+    gpu_mem_mb = 0
+    try:
+        import torch
+        if torch.cuda.is_available():
+            gpu_mem_mb = round(torch.cuda.memory_allocated() / 1024 / 1024, 1)
+    except Exception:
+        pass
+
     return {
         "epic_indexed_chunks": len(epic_meta) if epic_meta else 0,
-        "epic_total_input": epic_stats.get("total_chunks", "?"),
-        "epic_after_cosine": epic_stats.get("after_cosine", "?"),
-        "epic_after_llm": epic_stats.get("after_llm", "?"),
-        "rag_total_chunks": len(rag_chunks) if rag_chunks else 0,
+        "epic_total_input":    epic_stats.get("total_chunks", 0),
+        "epic_after_cosine":   epic_stats.get("after_cosine", 0),
+        "epic_after_llm":      epic_stats.get("after_llm", 0),
+        "rag_total_chunks":    len(rag_chunks) if rag_chunks else 0,
+        # Memory
+        "epic_index_mb":       epic_faiss_mb,
+        "epic_meta_mb":        epic_meta_mb,
+        "epic_total_mb":       round(epic_faiss_mb + epic_meta_mb, 1),
+        "rag_index_mb":        rag_faiss_mb,
+        "gpu_mem_mb":          gpu_mem_mb,
     }
 
 

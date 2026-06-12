@@ -229,39 +229,59 @@ with st.expander("📋 Preferences used for EPIC indexing", expanded=False):
 try:
     from src.retriever import get_index_stats
     stats = get_index_stats(mbti)
-    epic_n  = stats.get("epic_indexed_chunks", 0)
-    total_n = stats.get("epic_total_input", 0)
-    rag_n   = stats.get("rag_total_chunks", 0)
-    compress = f"{epic_n/total_n*100:.1f}%" if total_n and epic_n else "—"
+    epic_n       = stats.get("epic_indexed_chunks", 0)
+    total_n      = stats.get("epic_total_input", 0)
+    rag_n        = stats.get("rag_total_chunks", 0)
+    epic_mb      = stats.get("epic_total_mb", 0)
+    rag_mb       = stats.get("rag_index_mb", 0)
+    gpu_mb       = stats.get("gpu_mem_mb", 0)
+    compress     = f"{epic_n/total_n*100:.1f}%" if total_n and epic_n else "—"
     compress_pct = epic_n / total_n if total_n else 0
+    mb_compress  = f"{epic_mb/rag_mb*100:.1f}%" if rag_mb and epic_mb else "—"
 
     st.markdown(
         f'<div class="metric-bar">'
         f'  <div><div class="stat-val" style="color:{color}">{epic_n:,}</div>'
-        f'      <div class="stat-lbl">EPIC Index Chunks</div></div>'
-        f'  <div style="color:#1a2535">│</div>'
-        f'  <div><div class="stat-val" style="color:#3a5a7a">{total_n:,}</div>'
-        f'      <div class="stat-lbl">Total Chunks</div></div>'
-        f'  <div style="color:#1a2535">│</div>'
-        f'  <div><div class="stat-val" style="color:#4caf82">{compress}</div>'
-        f'      <div class="stat-lbl">Compression Ratio</div></div>'
+        f'      <div class="stat-lbl">EPIC Chunks</div></div>'
         f'  <div style="color:#1a2535">│</div>'
         f'  <div><div class="stat-val" style="color:#6a8aaa">{rag_n:,}</div>'
-        f'      <div class="stat-lbl">RAG Index Chunks</div></div>'
-        f'</div>',
+        f'      <div class="stat-lbl">RAG Chunks</div></div>'
+        f'  <div style="color:#1a2535">│</div>'
+        f'  <div><div class="stat-val" style="color:#4caf82">{compress}</div>'
+        f'      <div class="stat-lbl">Chunk Compression</div></div>'
+        f'  <div style="color:#1a2535">│</div>'
+        f'  <div><div class="stat-val" style="color:{color}">{epic_mb} MB</div>'
+        f'      <div class="stat-lbl">EPIC Index Size</div></div>'
+        f'  <div style="color:#1a2535">│</div>'
+        f'  <div><div class="stat-val" style="color:#6a8aaa">{rag_mb} MB</div>'
+        f'      <div class="stat-lbl">RAG Index Size</div></div>'
+        f'  <div style="color:#1a2535">│</div>'
+        f'  <div><div class="stat-val" style="color:#e8a838">{mb_compress}</div>'
+        f'      <div class="stat-lbl">Memory Savings</div></div>'
+        + (f'  <div style="color:#1a2535">│</div>'
+           f'  <div><div class="stat-val" style="color:#a0a0a0">{gpu_mb} MB</div>'
+           f'      <div class="stat-lbl">GPU Mem Used</div></div>'
+           if gpu_mb else "")
+        + f'</div>',
         unsafe_allow_html=True,
     )
 
-    # Compression bar
-    if compress_pct > 0:
+    # Dual compression bar: chunks + memory
+    if compress_pct > 0 or (epic_mb and rag_mb):
+        mb_pct = epic_mb / rag_mb if rag_mb else 0
         st.markdown(
-            f'<div style="margin:-4px 0 8px">'
-            f'  <div style="font-size:0.68rem;color:#3a5a7a;margin-bottom:3px">Index compression</div>'
-            f'  <div style="background:#0d1420;border-radius:6px;height:8px;overflow:hidden">'
-            f'    <div style="width:{compress_pct*100:.1f}%;background:{color};height:100%;border-radius:6px"></div>'
+            f'<div style="margin:-4px 0 8px;display:flex;gap:16px">'
+            f'  <div style="flex:1">'
+            f'    <div style="font-size:0.65rem;color:#3a5a7a;margin-bottom:3px">Chunk compression &nbsp;<span style="color:{color}">{compress}</span></div>'
+            f'    <div style="background:#0d1420;border-radius:5px;height:7px;overflow:hidden">'
+            f'      <div style="width:{compress_pct*100:.1f}%;background:{color};height:100%;border-radius:5px"></div>'
+            f'    </div>'
             f'  </div>'
-            f'  <div style="display:flex;justify-content:space-between;font-size:0.62rem;color:#2a3a4a;margin-top:2px">'
-            f'    <span>EPIC kept {compress}</span><span>RAG uses 100%</span>'
+            f'  <div style="flex:1">'
+            f'    <div style="font-size:0.65rem;color:#3a5a7a;margin-bottom:3px">Memory savings &nbsp;<span style="color:#e8a838">{mb_compress}</span></div>'
+            f'    <div style="background:#0d1420;border-radius:5px;height:7px;overflow:hidden">'
+            f'      <div style="width:{mb_pct*100:.1f}%;background:#e8a838;height:100%;border-radius:5px"></div>'
+            f'    </div>'
             f'  </div>'
             f'</div>',
             unsafe_allow_html=True,
