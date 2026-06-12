@@ -27,14 +27,16 @@ Answer in the voice and style of someone with the {mbti} personality type."""
 
 
 RAG_SYSTEM = """\
-You are a helpful assistant. Answer the question using only the retrieved documents below.
-Be factual and concise."""
+You are a helpful assistant. Answer the question using the retrieved documents below.
+Give a thorough, practical response with specific advice. Use 3-5 paragraphs."""
 
 RAG_USER = """\
 Retrieved documents:
 {context}
 
-Question: {question}"""
+Question: {question}
+
+Answer with specific, actionable advice based on the documents above."""
 
 
 def format_epic_context(docs: list[dict]) -> str:
@@ -98,6 +100,6 @@ def generate_rag(
         messages=[{"role": "user", "content": user}],
         system=RAG_SYSTEM,
         max_tokens=512,
-        temperature=0.3,
+        temperature=0.7,
         backend=backend,
     )
