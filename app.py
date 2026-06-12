@@ -234,15 +234,18 @@ with col_mbti:
     st.markdown("**Choose your MBTI persona**")
     for group_name, ginfo in GROUPS.items():
         gcols = st.columns([1.2] + [1]*4)
+        g_color = ginfo["color"]
+        g_emoji = ginfo["emoji"]
         gcols[0].markdown(
             f"<div style='padding-top:6px'>"
-            f"<span style='color:{ginfo[\"color\"]};font-weight:700;font-size:0.72rem'>"
-            f"{ginfo['emoji']} {group_name}</span></div>",
+            f"<span style='color:{g_color};font-weight:700;font-size:0.72rem'>"
+            f"{g_emoji} {group_name}</span></div>",
             unsafe_allow_html=True,
         )
         for col, t in zip(gcols[1:], ginfo["types"]):
             is_sel = (t == st.session_state.mbti)
-            label = f"**{t}**\n{PERSONA_META[t]['label']}"
+            t_label = PERSONA_META[t]["label"]
+            label = f"**{t}**\n{t_label}"
             if col.button(
                 label, key=f"mbti_{t}",
                 type="primary" if is_sel else "secondary",
