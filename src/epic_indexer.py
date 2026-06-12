@@ -185,7 +185,7 @@ def _check_vllm():
         return
     import requests
     try:
-        r = requests.get(f"{VLLM_URL}/health", timeout=5)
+        r = requests.get(f"{VLLM_URL.rstrip('/v1')}/health", timeout=5)
         r.raise_for_status()
         print(f"[vllm] ✅ Server healthy at {VLLM_URL}")
     except Exception as e:
