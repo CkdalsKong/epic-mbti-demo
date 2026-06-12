@@ -1,0 +1,226 @@
+{
+  "INTJ": {
+    "label": "Architect",
+    "description": "Strategic, independent thinker who values competence and long-term planning",
+    "preferences": [
+      "Prefers logical, evidence-based reasoning over emotional appeals or gut feelings",
+      "Values long-term strategic planning and dislikes short-sighted or impulsive decisions",
+      "Seeks deep mastery of subjects rather than surface-level familiarity",
+      "Prefers working independently with minimal supervision or social interruption",
+      "Appreciates direct, concise communication and dislikes small talk or social rituals",
+      "Judges ideas on merit and logic, regardless of social consensus or authority",
+      "Values autonomy and self-determination above conformity to group norms",
+      "Prefers systems, frameworks, and structured approaches to complex problems"
+    ]
+  },
+  "INTP": {
+    "label": "Logician",
+    "description": "Innovative, precise thinker who loves exploring theoretical ideas",
+    "preferences": [
+      "Enjoys exploring abstract theories and hypothetical scenarios for their own sake",
+      "Values intellectual honesty and precision; dislikes vague or inconsistent reasoning",
+      "Prefers understanding the underlying principles of a system rather than memorizing rules",
+      "Tends to play devil's advocate and enjoys stress-testing ideas through debate",
+      "Prefers flexible, unstructured environments that allow for spontaneous exploration",
+      "Values competence and intellectual curiosity above social status or authority",
+      "Dislikes repetitive or routine tasks; seeks novel intellectual challenges",
+      "Approaches problems analytically, breaking them down into component parts"
+    ]
+  },
+  "ENTJ": {
+    "label": "Commander",
+    "description": "Bold, decisive leader who excels at organizing people and achieving goals",
+    "preferences": [
+      "Prefers taking charge and organizing systems and people toward clear objectives",
+      "Values efficiency and decisive action; dislikes indecision, ambiguity, or wasted effort",
+      "Sets high standards for competence and expects others to meet them",
+      "Prefers direct, frank communication and gets frustrated with evasiveness",
+      "Enjoys strategic planning and long-term vision over day-to-day operational details",
+      "Views obstacles as challenges to overcome rather than reasons to stop",
+      "Prefers structured environments with clear hierarchies and accountability",
+      "Values continuous improvement and pushes both self and others toward growth"
+    ]
+  },
+  "ENTP": {
+    "label": "Debater",
+    "description": "Quick-witted, curious thinker who loves intellectual sparring and new ideas",
+    "preferences": [
+      "Enjoys intellectual debate and is energized by challenging established ideas",
+      "Values innovation and creativity; dislikes rigid rules or bureaucratic thinking",
+      "Prefers brainstorming possibilities over executing detailed implementation plans",
+      "Is drawn to complex, multifaceted problems that require creative lateral thinking",
+      "Enjoys playing devil's advocate even for positions they don't personally hold",
+      "Prefers variety and novelty; gets bored with repetition and routine",
+      "Values intelligence and quick thinking in others above social niceties",
+      "Tends to multitask across many projects rather than focusing on one at a time"
+    ]
+  },
+  "INFJ": {
+    "label": "Advocate",
+    "description": "Insightful, principled idealist driven by a vision for a better world",
+    "preferences": [
+      "Is motivated by a deep sense of purpose and the desire to make a positive difference",
+      "Values authenticity and meaningful connections over superficial social interactions",
+      "Prefers understanding people's motivations and deeper emotional needs",
+      "Approaches conflicts with empathy but holds firm to core values and principles",
+      "Prefers thoughtful, in-depth conversations over casual small talk",
+      "Values harmony but will speak out firmly against injustice or ethical violations",
+      "Prefers planned, organized environments with time to process internally before acting",
+      "Seeks alignment between personal values and professional or creative work"
+    ]
+  },
+  "INFP": {
+    "label": "Mediator",
+    "description": "Idealistic, empathetic dreamer guided by personal values and authenticity",
+    "preferences": [
+      "Places personal values and authenticity above external expectations or social norms",
+      "Is motivated by meaning and purpose; dislikes tasks that feel pointless or exploitative",
+      "Prefers deep one-on-one connections over large social gatherings",
+      "Values creative expression as a way to explore and communicate inner emotional worlds",
+      "Approaches others with empathy and a non-judgmental, open-minded attitude",
+      "Dislikes conflict but will advocate passionately for deeply held values",
+      "Prefers flexible, unstructured environments that honor individual expression",
+      "Seeks to understand the human condition through stories, art, and personal narrative"
+    ]
+  },
+  "ENFJ": {
+    "label": "Protagonist",
+    "description": "Charismatic, empathetic leader who inspires and organizes people around shared goals",
+    "preferences": [
+      "Is energized by helping others grow, succeed, and realize their potential",
+      "Values harmony and cooperation; actively works to resolve interpersonal conflict",
+      "Prefers inclusive decision-making processes that consider everyone's perspective",
+      "Is highly attuned to the emotional dynamics in a group or relationship",
+      "Communicates with warmth, enthusiasm, and a focus on shared values",
+      "Prefers structured plans with clear goals, especially when leading a team",
+      "Values loyalty, commitment, and long-term relationships over transactional interactions",
+      "Motivates others through positive reinforcement and genuine appreciation"
+    ]
+  },
+  "ENFP": {
+    "label": "Campaigner",
+    "description": "Enthusiastic, imaginative free spirit who sees life as full of possibilities",
+    "preferences": [
+      "Is energized by new ideas, people, and experiences; dislikes routine and repetition",
+      "Values emotional connection and authentic self-expression in all relationships",
+      "Prefers brainstorming creative possibilities over rigid planning or execution",
+      "Is highly empathetic and draws energy from meaningful conversations about life and feelings",
+      "Values freedom and spontaneity; resists rigid rules and conventional expectations",
+      "Seeks inspiration and meaning in everyday experiences and human stories",
+      "Prefers collaborative, open-ended environments that celebrate individuality",
+      "Brings enthusiasm and optimism but can struggle with following through on commitments"
+    ]
+  },
+  "ISTJ": {
+    "label": "Logistician",
+    "description": "Reliable, detail-oriented organizer who values duty, tradition, and order",
+    "preferences": [
+      "Values reliability, consistency, and following through on commitments",
+      "Prefers well-established procedures and proven methods over unproven innovations",
+      "Approaches tasks systematically with attention to accuracy and detail",
+      "Values punctuality, organization, and meeting responsibilities without excuses",
+      "Prefers clear expectations and defined roles over ambiguous open-ended situations",
+      "Makes decisions based on past experience and verified facts rather than speculation",
+      "Values tradition, institutions, and social stability as foundations for orderly life",
+      "Prefers working in a quiet, structured environment with minimal distractions"
+    ]
+  },
+  "ISFJ": {
+    "label": "Defender",
+    "description": "Warm, meticulous caretaker devoted to supporting and protecting others",
+    "preferences": [
+      "Finds fulfillment in caring for others and ensuring their practical needs are met",
+      "Values loyalty, dependability, and long-term commitment in relationships",
+      "Prefers familiar, stable environments over constant change or uncertainty",
+      "Pays close attention to details and remembers specific facts about people they care about",
+      "Approaches conflicts cautiously and prefers harmony over confrontation",
+      "Values tradition, family, and community as sources of meaning and identity",
+      "Prefers working behind the scenes to support others rather than seeking recognition",
+      "Makes decisions with careful consideration of how they affect the people involved"
+    ]
+  },
+  "ESTJ": {
+    "label": "Executive",
+    "description": "Organized, decisive administrator who upholds structure and takes charge",
+    "preferences": [
+      "Values clear structure, defined rules, and consistent enforcement of standards",
+      "Prefers decisive action and dislikes prolonged deliberation or ambiguity",
+      "Takes responsibility seriously and expects others to fulfill their obligations",
+      "Values tradition and proven methods; is skeptical of untested innovations",
+      "Prefers direct, no-nonsense communication without excessive sentimentality",
+      "Is comfortable in leadership roles and naturally takes charge in disorganized situations",
+      "Values hard work, diligence, and measurable productivity as marks of good character",
+      "Prefers community involvement and upholding social institutions and norms"
+    ]
+  },
+  "ESFJ": {
+    "label": "Consul",
+    "description": "Caring, sociable organizer who thrives on maintaining harmony and helping others",
+    "preferences": [
+      "Derives satisfaction from being helpful and ensuring others feel cared for",
+      "Values social harmony and actively works to maintain positive group dynamics",
+      "Is highly aware of social norms and expectations and generally respects them",
+      "Prefers warm, personal communication and remembers important details about others",
+      "Values loyalty, tradition, and long-term relationships above novelty or adventure",
+      "Organizes social events and community activities to bring people together",
+      "Makes decisions based on how they affect the people involved, not just logic",
+      "Seeks approval and recognition from others and is sensitive to criticism"
+    ]
+  },
+  "ISTP": {
+    "label": "Virtuoso",
+    "description": "Observant, practical problem-solver who loves hands-on exploration and tools",
+    "preferences": [
+      "Learns best through direct hands-on experience rather than abstract theory",
+      "Prefers practical, efficient solutions that work in the real world",
+      "Values personal freedom and independence; dislikes being micromanaged",
+      "Is calm under pressure and approaches crises with rational, detached analysis",
+      "Prefers action over prolonged discussion; gets to the point quickly",
+      "Enjoys taking things apart to understand how they work at a fundamental level",
+      "Prefers flexible, unscheduled time that allows for spontaneous problem-solving",
+      "Values skill and craftsmanship; takes pride in technical mastery"
+    ]
+  },
+  "ISFP": {
+    "label": "Adventurer",
+    "description": "Gentle, artistic soul who lives in the present and delights in aesthetic beauty",
+    "preferences": [
+      "Values living in the present moment and experiencing life through the senses",
+      "Expresses identity and values through personal style, art, and aesthetic choices",
+      "Prefers gentle, non-confrontational environments and dislikes harsh criticism",
+      "Is fiercely loyal to personal values but rarely imposes them on others",
+      "Enjoys hands-on creative work and physical experiences in nature",
+      "Prefers small, close-knit social circles over large group settings",
+      "Makes decisions based on personal values and emotional resonance rather than logic",
+      "Values authenticity and dislikes pretension, social performance, or inauthenticity"
+    ]
+  },
+  "ESTP": {
+    "label": "Entrepreneur",
+    "description": "Energetic, perceptive action-taker who thrives in dynamic, fast-paced environments",
+    "preferences": [
+      "Thrives in fast-paced, high-energy environments that demand immediate action",
+      "Prefers learning through direct experience rather than reading or theory",
+      "Is observant and picks up on subtle environmental and interpersonal cues quickly",
+      "Values practicality and results; dislikes overanalyzing or philosophizing",
+      "Enjoys social interactions and is naturally charming in group settings",
+      "Prefers flexibility and spontaneity; resists rigid long-term planning",
+      "Approaches problems with resourcefulness and improvisation rather than preparation",
+      "Is risk-tolerant and finds excitement in bold, competitive challenges"
+    ]
+  },
+  "ESFP": {
+    "label": "Entertainer",
+    "description": "Spontaneous, vivacious performer who loves people and living in the moment",
+    "preferences": [
+      "Is energized by social interaction and brings fun and enthusiasm to group settings",
+      "Values living in the present and embracing experiences as they come",
+      "Prefers practical, hands-on activities over abstract theory or planning",
+      "Is warm, encouraging, and naturally attuned to the emotional needs of others",
+      "Dislikes rigid structure, long-term planning, or repetitive routine",
+      "Expresses creativity through performance, fashion, food, and social events",
+      "Prefers collaborative, spontaneous environments where everyone participates",
+      "Makes decisions based on what feels right in the moment and what benefits the group"
+    ]
+  }
+}

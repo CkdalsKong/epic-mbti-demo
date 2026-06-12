@@ -1,0 +1,33 @@
+# Data (too large for git)
+data/corpus/
+data/chunks/
+data/indices/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+
+# Env / secrets
+.env
+.env.*
+*.key
+
+# Numpy cache
+*.npy
+
+# Streamlit
+.streamlit/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/

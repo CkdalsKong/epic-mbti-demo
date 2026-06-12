@@ -1,0 +1,17 @@
+# Core
+streamlit>=1.35.0
+numpy>=1.24.0
+faiss-cpu>=1.7.4         # use faiss-gpu on server with GPU
+
+# Embeddings + LLM
+torch>=2.1.0
+transformers>=4.40.0
+anthropic>=0.28.0
+
+# Corpus collection
+requests>=2.31.0
+beautifulsoup4>=4.12.0
+praw>=7.7.0              # Reddit API (optional)
+zstandard>=0.21.0        # Reddit Pushshift .zst dump parsing
+datasets>=2.18.0         # HuggingFace datasets (Wikipedia streaming)
+tqdm>=4.66.0
