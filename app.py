@@ -206,7 +206,7 @@ with left_col:
         for col, t in zip(gcols[1:], ginfo["types"]):
             is_sel = (t == st.session_state.mbti)
             t_label = PERSONA_META[t]["label"]
-            if col.button(f"**{t}**\n{t_label}", key=f"mbti_{t}",
+            if col.button(f"**{t}**", key=f"mbti_{t}",
                           type="primary" if is_sel else "secondary",
                           use_container_width=True):
                 st.session_state.mbti = t
@@ -600,10 +600,10 @@ if run and query.strip():
         rag_eval_ph.markdown(_eval_html(rag_eval),   unsafe_allow_html=True)
     except Exception as e:
         import traceback
-        eval_error = traceback.format_exc()
-        print(f"[eval] ERROR: {eval_error}")
-        epic_eval_ph.markdown(f'<div class="eval-section"><div class="eval-title" style="color:#e05a5a">⚠️ Eval error: {e}</div></div>', unsafe_allow_html=True)
-        rag_eval_ph.empty()
+        print(f"[eval] ERROR: {traceback.format_exc()}")
+        err_html = f'<div class="eval-section"><div class="eval-title" style="color:#e05a5a">⚠️ Eval error: {e}</div></div>'
+        epic_eval_ph.markdown(err_html, unsafe_allow_html=True)
+        rag_eval_ph.markdown(err_html, unsafe_allow_html=True)
 
     st.session_state.result = {
         "query": query, "mbti": mbti,
