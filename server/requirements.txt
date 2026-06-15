@@ -1,0 +1,15 @@
+# Python packages used by InteractiveEPIC/epic_runtime.py and
+# InteractiveEPIC/epic_runtime_server.py.
+#
+# Recommended setup:
+#   conda create -n epic python=3.11
+#   conda activate epic
+#   pip install -r requirements.txt
+#
+# vLLM is expected to run as a separate OpenAI-compatible server and is
+# intentionally not installed by this runtime environment.
+
+numpy>=1.26,<3
+torch>=2.2
+transformers>=4.41
+faiss-cpu>=1.8

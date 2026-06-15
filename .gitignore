@@ -31,3 +31,17 @@ Thumbs.db
 # IDE
 .vscode/
 .idea/
+
+# Xcode / Swift
+mac-app/*.xcodeproj/project.xcworkspace/
+mac-app/*.xcodeproj/xcuserdata/
+mac-app/DerivedData/
+*.xcuserstate
+*.xccheckout
+mac-app/InteractiveEPIC/*.swp
+
+# Pre-built persona indexes (large binary files)
+server/preindex/
+
+# Python files accidentally copied into Xcode directory
+mac-app/InteractiveEPIC/*.py
