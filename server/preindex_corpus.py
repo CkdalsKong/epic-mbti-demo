@@ -28,8 +28,10 @@ Output layout:
 import argparse
 import json
 import os
+import re
 import sys
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any
 
 from tqdm import tqdm
@@ -88,8 +90,10 @@ def chat_completion(llm_url: str, model: str, messages: list[dict], timeout: int
     payload = json.dumps({
         "model": model,
         "messages": messages,
-        "max_tokens": 512,
+        "max_tokens": 256,
         "temperature": 0.0,
+        # Qwen3 specific: disable thinking to get direct answers
+        "chat_template_kwargs": {"enable_thinking": False},
     }).encode("utf-8")
     req = urllib.request.Request(
         f"{llm_url}/v1/chat/completions",
@@ -99,15 +103,18 @@ def chat_completion(llm_url: str, model: str, messages: list[dict], timeout: int
     )
     with urllib.request.urlopen(req, timeout=timeout) as resp:
         data = json.load(resp)
-    return data["choices"][0]["message"]["content"].strip()
+    content = data["choices"][0]["message"]["content"].strip()
+    # Strip <think>...</think> blocks in case thinking mode is still active
+    content = re.sub(r"<think>.*?</think>", "", content, flags=re.DOTALL).strip()
+    return content
 
 
 FINE_SYSTEM = (
-    "You are a strict preference alignment evaluator. "
-    "Given user preferences and a text chunk, decide if the chunk is useful "
-    "for future preference-aligned answers. Output exactly one line:\n"
-    "KEEP: <one concise instruction on how to use this chunk for the preference>\n"
-    "or: DISCARD"
+    "You are a strict preference alignment filter. "
+    "Respond with EXACTLY one line — no preamble, no explanation:\n"
+    "  KEEP: <one concise instruction on how to use this chunk>\n"
+    "  DISCARD\n"
+    "Output nothing else."
 )
 
 
@@ -120,10 +127,9 @@ def fine_verify_chunk(
 ) -> dict | None:
     pref_text = "\n".join(f"- {p}" for p in preferences)
     user_msg = (
-        f"User preferences:\n{pref_text}\n\n"
-        f"Chunk from \"{chunk['article_title']}\":\n{chunk['text']}\n\n"
-        "Is this chunk useful for preference-aligned answers? "
-        "Reply KEEP: <instruction> or DISCARD."
+        f"Preferences:\n{pref_text}\n\n"
+        f"Chunk:\n{chunk['text'][:800]}\n\n"
+        "KEEP or DISCARD?"
     )
     try:
         reply = chat_completion(llm_url, model, [
@@ -131,11 +137,13 @@ def fine_verify_chunk(
             {"role": "user", "content": user_msg},
         ], timeout=timeout)
     except Exception as e:
-        print(f"      LLM error for chunk {chunk['index']}: {e}", flush=True)
+        print(f"\n  LLM error chunk {chunk['index']}: {e}", flush=True)
         return None
 
-    if reply.upper().startswith("KEEP"):
-        instruction = reply[4:].lstrip(": ").strip() or "Use this chunk to answer with preference alignment."
+    # Match KEEP anywhere in the reply (handles stray preamble)
+    m = re.search(r"KEEP\s*:\s*(.+)", reply, re.IGNORECASE)
+    if m:
+        instruction = m.group(1).strip() or "Use this chunk for preference-aligned answers."
         return {"instruction": instruction}
     return None
 
@@ -172,8 +180,10 @@ def main() -> int:
     parser.add_argument("--llm-model",      default="Qwen/Qwen3-8B")
     parser.add_argument("--llm-server-url", default="http://127.0.0.1:8008")
     parser.add_argument("--llm-timeout",    type=int, default=120)
-    parser.add_argument("--coarse-threshold", type=float, default=0.30)
+    parser.add_argument("--coarse-threshold", type=float, default=0.35,
+                        help="Cosine sim threshold for coarse filter (higher = fewer candidates for LLM)")
     parser.add_argument("--top-prefs",  type=int, default=10, help="How many preference blocks to use per persona")
+    parser.add_argument("--workers",    type=int, default=32, help="Parallel LLM workers for fine verification")
     parser.add_argument("--resume",     action="store_true", help="Skip personas that already have meta.json")
     args = parser.parse_args()
 
@@ -240,24 +250,32 @@ def main() -> int:
         coarse_indices = np.where(coarse_mask)[0]
         print(f"  Coarse kept: {len(coarse_indices)}/{len(chunks)}", flush=True)
 
-        # ── Fine LLM verification ──────────────────────────────────────────
-        print(f"  Fine verification via LLM ({args.llm_model})...", flush=True)
+        # ── Fine LLM verification (parallel) ──────────────────────────────
+        print(f"  Fine verification via LLM ({args.llm_model}), workers={args.workers}...", flush=True)
         epic_entries = []
-        with tqdm(total=len(coarse_indices), desc=f"  persona {pi} fine-verify", unit="chunk", dynamic_ncols=True) as pbar:
-            for ci in coarse_indices:
-                chunk = chunks[ci]
-                best_pref = preferences[best_pref_idx[ci]]
-                result = fine_verify_chunk(chunk, preferences, args.llm_server_url, args.llm_model, args.llm_timeout)
-                if result:
-                    epic_entries.append({
-                        "chunk_text": chunk.get("display_text", chunk["text"]),
-                        "article_title": chunk["article_title"],
-                        "instruction": result["instruction"],
-                        "preference": best_pref,
-                        "score": float(max_scores[ci]),
-                    })
-                pbar.set_postfix(kept=len(epic_entries))
-                pbar.update(1)
+
+        def verify_one(ci: int):
+            chunk = chunks[ci]
+            result = fine_verify_chunk(chunk, preferences, args.llm_server_url, args.llm_model, args.llm_timeout)
+            return ci, result
+
+        with tqdm(total=len(coarse_indices), desc=f"  p{pi} fine-verify", unit="chunk", dynamic_ncols=True) as pbar:
+            with ThreadPoolExecutor(max_workers=args.workers) as ex:
+                futures = {ex.submit(verify_one, int(ci)): int(ci) for ci in coarse_indices}
+                for fut in as_completed(futures):
+                    ci, result = fut.result()
+                    if result:
+                        best_pref = preferences[best_pref_idx[ci]]
+                        chunk = chunks[ci]
+                        epic_entries.append({
+                            "chunk_text": chunk.get("display_text", chunk["text"]),
+                            "article_title": chunk["article_title"],
+                            "instruction": result["instruction"],
+                            "preference": best_pref,
+                            "score": float(max_scores[ci]),
+                        })
+                    pbar.set_postfix(kept=len(epic_entries))
+                    pbar.update(1)
 
         print(f"  EPIC entries: {len(epic_entries)}", flush=True)
 
