@@ -56,14 +56,10 @@ st.markdown("""
 *, html, body, [class*="css"] { font-family: 'Inter', sans-serif !important; box-sizing: border-box; }
 #MainMenu, footer, header { visibility: hidden; }
 
-/* ── No-scroll single page ── */
-html, body { overflow: hidden !important; height: 100vh !important; }
-[data-testid="stAppViewContainer"] { overflow: hidden !important; height: 100vh !important; }
-section.main { overflow: hidden !important; }
+/* ── Layout ── */
 .block-container {
-    padding: 0.55rem 1.5rem 0.3rem !important;
+    padding: 0.55rem 1.5rem 1.5rem !important;
     max-width: 100% !important;
-    overflow: hidden !important;
 }
 
 /* ── Header ── */
@@ -235,6 +231,14 @@ with right_col:
         f'</div>',
         unsafe_allow_html=True,
     )
+
+    # Preferences
+    tags = "".join(
+        f'<span style="display:inline-block;border-radius:5px;padding:2px 8px;margin:2px;'
+        f'background:{bg};border:1px solid {color}44;color:{color}cc;font-size:0.65rem">• {p}</span>'
+        for p in meta["preferences"]
+    )
+    st.markdown(f'<div style="margin-bottom:6px;line-height:2">{tags}</div>', unsafe_allow_html=True)
 
     # Index stats — always visible, compact two-card layout
     try:
