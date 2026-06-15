@@ -339,6 +339,7 @@ with col_e:
     epic_pref_ph  = st.empty()
     epic_resp_ph  = st.empty()
     epic_eval_ph  = st.empty()
+    epic_docs_ph  = st.empty()
 
 with col_r:
     st.markdown(
@@ -352,10 +353,11 @@ with col_r:
         '</div>',
         unsafe_allow_html=True,
     )
-    rag_chips_ph = st.empty()
+    rag_chips_ph  = st.empty()
     rag_spacer_ph = st.empty()
-    rag_resp_ph  = st.empty()
-    rag_eval_ph  = st.empty()
+    rag_resp_ph   = st.empty()
+    rag_eval_ph   = st.empty()
+    rag_docs_ph   = st.empty()
 
 # ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -433,6 +435,33 @@ def _eval_html(ev: dict) -> str:
 
 # ─── Populate panels based on state ───────────────────────────────────────────
 
+def _doc_expander(ph, docs, accent_color, show_inst=False):
+    if not docs:
+        return
+    lines = []
+    for i, doc in enumerate(docs, 1):
+        src  = doc.get("source","")
+        sc   = doc.get("score", 0)
+        txt  = doc.get("text","")[:200]
+        inst = doc.get("instruction","")
+        inst_html = f'<div class="doc-inst">📌 {inst}</div>' if (show_inst and inst) else ""
+        lines.append(
+            f'<div class="doc-card">'
+            f'  <div class="doc-src">#{i} · {src} · {sc:.3f}</div>'
+            + inst_html +
+            f'  <div class="doc-txt">{txt}…</div>'
+            f'</div>'
+        )
+    ph.markdown(
+        f'<details style="margin-top:6px">'
+        f'<summary style="font-size:0.68rem;color:{accent_color};cursor:pointer;user-select:none">'
+        f'📂 Retrieved docs ({len(docs)})</summary>'
+        f'<div style="margin-top:4px">{"".join(lines)}</div>'
+        f'</details>',
+        unsafe_allow_html=True,
+    )
+
+
 if er:
     epic_chips_ph.markdown(_chips(er["retr_ms"], er["gen_ms"], len(er["docs"])), unsafe_allow_html=True)
     if er.get("top_pref"):
@@ -443,6 +472,7 @@ if er:
     epic_resp_ph.markdown(f'<div class="response-box resp-animate">{resp_html}</div>', unsafe_allow_html=True)
     if ee:
         epic_eval_ph.markdown(_eval_html(ee), unsafe_allow_html=True)
+    _doc_expander(epic_docs_ph, er["docs"], color, show_inst=True)
 else:
     epic_resp_ph.markdown(
         '<div class="response-box">'
@@ -462,6 +492,7 @@ if rr:
     rag_resp_ph.markdown(f'<div class="response-box resp-animate" style="border-color:#141e2a">{resp_html}</div>', unsafe_allow_html=True)
     if re_:
         rag_eval_ph.markdown(_eval_html(re_), unsafe_allow_html=True)
+    _doc_expander(rag_docs_ph, rr["docs"], "#6a8aaa", show_inst=False)
 else:
     rag_resp_ph.markdown(
         '<div class="response-box" style="border-color:#141e2a">'
@@ -547,14 +578,17 @@ if run and query.strip():
     rag_eval_ph.markdown('<div class="eval-section"><div class="eval-title" style="color:#2a4a6a">⏳ Evaluating preference following…</div></div>', unsafe_allow_html=True)
 
     epic_eval, rag_eval = None, None
-    with ThreadPoolExecutor(max_workers=2) as ex:
-        fe = ex.submit(evaluate_response, query, top_pref, (epic_result or {}).get("response", ""))
-        fr = ex.submit(evaluate_response, query, top_pref, (rag_result or {}).get("response", ""))
-        epic_eval = fe.result()
-        rag_eval  = fr.result()
-
-    epic_eval_ph.markdown(_eval_html(epic_eval), unsafe_allow_html=True)
-    rag_eval_ph.markdown(_eval_html(rag_eval),   unsafe_allow_html=True)
+    try:
+        with ThreadPoolExecutor(max_workers=2) as ex:
+            fe = ex.submit(evaluate_response, query, top_pref, (epic_result or {}).get("response", ""))
+            fr = ex.submit(evaluate_response, query, top_pref, (rag_result or {}).get("response", ""))
+            epic_eval = fe.result()
+            rag_eval  = fr.result()
+        epic_eval_ph.markdown(_eval_html(epic_eval), unsafe_allow_html=True)
+        rag_eval_ph.markdown(_eval_html(rag_eval),   unsafe_allow_html=True)
+    except Exception as e:
+        epic_eval_ph.markdown(f'<div class="eval-section"><div class="eval-title" style="color:#e05a5a">⚠️ Eval error: {e}</div></div>', unsafe_allow_html=True)
+        rag_eval_ph.empty()
 
     st.session_state.result = {
         "query": query, "mbti": mbti,
