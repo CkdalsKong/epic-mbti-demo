@@ -275,7 +275,6 @@ try:
         f'<div style="display:flex;flex-direction:column;justify-content:center;align-items:center;'
         f'padding:0 10px;min-width:90px">'
         + chunk_arrow
-        + f'<div style="color:#1a2535;font-size:0.8rem;margin:6px 0">vs</div>'
         + mb_arrow
         + f'</div>'
     )
