@@ -611,7 +611,6 @@ if run and query.strip():
         "epic_eval": epic_eval, "rag_eval": rag_eval,
         "top_pref": top_pref,
     }
-    st.rerun()
 
 # ─── Footer ───────────────────────────────────────────────────────────────────
 
