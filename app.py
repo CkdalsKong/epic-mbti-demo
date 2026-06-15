@@ -234,10 +234,10 @@ try:
     rag_n        = stats.get("rag_total_chunks", 0)
     epic_mb      = stats.get("epic_total_mb", 0)
     rag_mb       = stats.get("rag_index_mb", 0)
-    gpu_mb       = stats.get("gpu_mem_mb", 0)
     compress     = f"{epic_n/total_n*100:.1f}%" if total_n and epic_n else "—"
     compress_pct = epic_n / total_n if total_n else 0
-    mb_compress  = f"{epic_mb/rag_mb*100:.1f}%" if rag_mb and epic_mb else "—"
+    mb_ratio     = round(rag_mb / epic_mb) if epic_mb else 0
+    mb_compress  = f"~{mb_ratio}x 감소" if mb_ratio else "—"
 
     def stat(val, label, clr):
         return (f'<div style="text-align:center;min-width:90px">'
@@ -262,14 +262,13 @@ try:
         + stat(f"{rag_mb} MB", "RAG Index Size",    "#6a8aaa")
         + div
         + stat(mb_compress,    "Memory Savings",    "#e8a838")
-        + (div + stat(f"{gpu_mb} MB", "GPU Mem", "#a0a0a0") if gpu_mb else "")
         + '</div>'
     )
     st.markdown(row1, unsafe_allow_html=True)
 
     # Dual compression bar: chunks + memory
     if compress_pct > 0 or (epic_mb and rag_mb):
-        mb_pct = epic_mb / rag_mb if rag_mb else 0
+        mb_pct = (epic_mb / rag_mb) if rag_mb else 0
         st.markdown(
             f'<div style="margin:-4px 0 8px;display:flex;gap:16px">'
             f'  <div style="flex:1">'
