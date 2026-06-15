@@ -234,58 +234,60 @@ try:
     rag_n        = stats.get("rag_total_chunks", 0)
     epic_mb      = stats.get("epic_total_mb", 0)
     rag_mb       = stats.get("rag_index_mb", 0)
-    compress     = f"{epic_n/total_n*100:.1f}%" if total_n and epic_n else "—"
-    compress_pct = epic_n / total_n if total_n else 0
-    mb_ratio     = round(rag_mb / epic_mb) if epic_mb else 0
-    mb_compress  = f"~{mb_ratio}x 감소" if mb_ratio else "—"
+    chunk_ratio = round(rag_n / epic_n) if epic_n else 0
+    mb_ratio    = round(rag_mb / epic_mb) if epic_mb else 0
 
-    def stat(val, label, clr):
-        return (f'<div style="text-align:center;min-width:90px">'
-                f'<div style="font-size:1.15rem;font-weight:800;color:{clr}">{val}</div>'
-                f'<div style="font-size:0.62rem;color:#3a5a7a;text-transform:uppercase;'
-                f'letter-spacing:0.5px;margin-top:1px">{label}</div></div>')
+    # Two-panel comparison card matching the left/right response layout
+    epic_bar_w = f"{max(2, round(epic_n / rag_n * 100))}%" if rag_n else "2%"
+    epic_mb_w  = f"{max(2, round(epic_mb / rag_mb * 100))}%" if rag_mb else "2%"
 
-    div = '<div style="color:#1a2535;font-size:1rem">│</div>'
-
-    row1 = (
-        f'<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;'
-        f'background:#060b12;border:1px solid #111e2a;border-radius:12px;'
-        f'padding:0.8rem 1.2rem;margin-bottom:6px">'
-        + stat(f"{epic_n:,}",  "EPIC Chunks",       color)
-        + div
-        + stat(f"{rag_n:,}",   "RAG Chunks",        "#6a8aaa")
-        + div
-        + stat(compress,       "Chunk Compression", "#4caf82")
-        + div
-        + stat(f"{epic_mb} MB","EPIC Index Size",   color)
-        + div
-        + stat(f"{rag_mb} MB", "RAG Index Size",    "#6a8aaa")
-        + div
-        + stat(mb_compress,    "Memory Savings",    "#e8a838")
-        + '</div>'
-    )
-    st.markdown(row1, unsafe_allow_html=True)
-
-    # Dual compression bar: chunks + memory
-    if compress_pct > 0 or (epic_mb and rag_mb):
-        mb_pct = (epic_mb / rag_mb) if rag_mb else 0
-        st.markdown(
-            f'<div style="margin:-4px 0 8px;display:flex;gap:16px">'
-            f'  <div style="flex:1">'
-            f'    <div style="font-size:0.65rem;color:#3a5a7a;margin-bottom:3px">Chunk compression &nbsp;<span style="color:{color}">{compress}</span></div>'
-            f'    <div style="background:#0d1420;border-radius:5px;height:7px;overflow:hidden">'
-            f'      <div style="width:{compress_pct*100:.1f}%;background:{color};height:100%;border-radius:5px"></div>'
+    def mini_card(title, title_color, chunks_val, index_val, bar_chunk_w, bar_mb_w, bar_color):
+        return (
+            f'<div style="flex:1;background:#060b12;border:1px solid {title_color}30;'
+            f'border-radius:10px;padding:12px 16px">'
+            f'  <div style="font-size:0.68rem;font-weight:800;color:{title_color};'
+            f'text-transform:uppercase;letter-spacing:1px;margin-bottom:10px">{title}</div>'
+            f'  <div style="margin-bottom:8px">'
+            f'    <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:3px">'
+            f'      <span style="font-size:0.6rem;color:#3a5a7a;text-transform:uppercase">Chunks</span>'
+            f'      <span style="font-size:1.05rem;font-weight:800;color:{title_color}">{chunks_val}</span>'
+            f'    </div>'
+            f'    <div style="background:#0d1420;border-radius:3px;height:5px;overflow:hidden">'
+            f'      <div style="width:{bar_chunk_w};background:{bar_color};height:100%;border-radius:3px"></div>'
             f'    </div>'
             f'  </div>'
-            f'  <div style="flex:1">'
-            f'    <div style="font-size:0.65rem;color:#3a5a7a;margin-bottom:3px">Memory savings &nbsp;<span style="color:#e8a838">{mb_compress}</span></div>'
-            f'    <div style="background:#0d1420;border-radius:5px;height:7px;overflow:hidden">'
-            f'      <div style="width:{mb_pct*100:.1f}%;background:#e8a838;height:100%;border-radius:5px"></div>'
+            f'  <div>'
+            f'    <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:3px">'
+            f'      <span style="font-size:0.6rem;color:#3a5a7a;text-transform:uppercase">Index Size</span>'
+            f'      <span style="font-size:1.05rem;font-weight:800;color:{title_color}">{index_val}</span>'
+            f'    </div>'
+            f'    <div style="background:#0d1420;border-radius:3px;height:5px;overflow:hidden">'
+            f'      <div style="width:{bar_mb_w};background:{bar_color};height:100%;border-radius:3px"></div>'
             f'    </div>'
             f'  </div>'
-            f'</div>',
-            unsafe_allow_html=True,
+            f'</div>'
         )
+
+    chunk_arrow = f'<div style="text-align:center;margin-bottom:6px"><div style="font-size:1.3rem;font-weight:900;color:#4caf82">{chunk_ratio}×</div><div style="font-size:0.58rem;color:#3a5a7a;text-transform:uppercase;letter-spacing:0.5px">fewer chunks</div></div>' if chunk_ratio else ""
+    mb_arrow    = f'<div style="text-align:center"><div style="font-size:1.3rem;font-weight:900;color:#e8a838">{mb_ratio}×</div><div style="font-size:0.58rem;color:#3a5a7a;text-transform:uppercase;letter-spacing:0.5px">smaller index</div></div>' if mb_ratio else ""
+
+    mid_col = (
+        f'<div style="display:flex;flex-direction:column;justify-content:center;align-items:center;'
+        f'padding:0 10px;min-width:90px">'
+        + chunk_arrow
+        + f'<div style="color:#1a2535;font-size:1.2rem;margin:4px 0">⬡</div>'
+        + mb_arrow
+        + f'</div>'
+    )
+
+    st.markdown(
+        f'<div style="display:flex;gap:8px;align-items:stretch;margin-bottom:8px">'
+        + mini_card("⚡ EPIC", color, f"{epic_n:,}", f"{epic_mb} MB", epic_bar_w, epic_mb_w, color)
+        + mid_col
+        + mini_card("Plain RAG", "#6a8aaa", f"{rag_n:,}", f"{rag_mb} MB", "100%", "100%", "#6a8aaa")
+        + f'</div>',
+        unsafe_allow_html=True,
+    )
 except Exception:
     st.info("⚠️ Index not built yet — run `python run_pipeline.py --steps index_epic,index_rag` first")
 
