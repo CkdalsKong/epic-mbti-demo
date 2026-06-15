@@ -110,35 +110,36 @@ def _parse_preference(text: str) -> str:
     return m.group(1).strip() if m else ""
 
 
-def _call(prompt: str) -> str:
+def _call(prompt: str, backend: str | None = None) -> str:
     return call_llm(
         messages=[{"role": "user", "content": prompt}],
         system=EVAL_SYSTEM,
         max_tokens=200,
         temperature=0.0,
+        backend=backend,
     )
 
 
-def evaluate_response(question: str, preference: str, response: str) -> dict:
+def evaluate_response(question: str, preference: str, response: str, backend: str | None = None) -> dict:
     """
     Run all 4 evaluation metrics in parallel.
     Returns dict with per-metric results + overall preference_following bool.
     """
     def run_acknow():
         p = ACKNOW_PROMPT.format(question=question, end_generation=response)
-        raw = _call(p)
+        raw = _call(p, backend)
         answer = _parse_answer(raw)
         extract = _parse_preference(raw)
         return "acknow", {"answer": answer, "extract_pref": extract, "raw": raw}
 
     def run_violate():
         p = VIOLATE_PROMPT.format(preference=preference, question=question, end_generation=response)
-        raw = _call(p)
+        raw = _call(p, backend)
         return "violate", {"answer": _parse_answer(raw), "raw": raw}
 
     def run_helpful():
         p = HELPFUL_PROMPT.format(question=question, end_generation=response)
-        raw = _call(p)
+        raw = _call(p, backend)
         return "helpful", {"answer": _parse_answer(raw), "raw": raw}
 
     results = {}
@@ -153,7 +154,7 @@ def evaluate_response(question: str, preference: str, response: str) -> dict:
     if is_acknowledgement:
         extract_pref = results["acknow"].get("extract_pref", "")
         p = HALLUCINATE_PROMPT.format(preference=preference, assistant_restatement=extract_pref)
-        raw = _call(p)
+        raw = _call(p, backend)
         results["hallucinate"] = {"answer": _parse_answer(raw), "raw": raw}
     else:
         results["hallucinate"] = {"answer": "no", "raw": ""}

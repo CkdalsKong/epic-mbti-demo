@@ -589,15 +589,19 @@ if run and query.strip():
     rag_eval_ph.markdown('<div class="eval-section"><div class="eval-title" style="color:#2a4a6a">⏳ Evaluating preference following…</div></div>', unsafe_allow_html=True)
 
     epic_eval, rag_eval = None, None
+    eval_error = None
     try:
         with ThreadPoolExecutor(max_workers=2) as ex:
-            fe = ex.submit(evaluate_response, query, top_pref, (epic_result or {}).get("response", ""))
-            fr = ex.submit(evaluate_response, query, top_pref, (rag_result or {}).get("response", ""))
+            fe = ex.submit(evaluate_response, query, top_pref, (epic_result or {}).get("response", ""), backend)
+            fr = ex.submit(evaluate_response, query, top_pref, (rag_result or {}).get("response", ""), backend)
             epic_eval = fe.result()
             rag_eval  = fr.result()
         epic_eval_ph.markdown(_eval_html(epic_eval), unsafe_allow_html=True)
         rag_eval_ph.markdown(_eval_html(rag_eval),   unsafe_allow_html=True)
     except Exception as e:
+        import traceback
+        eval_error = traceback.format_exc()
+        print(f"[eval] ERROR: {eval_error}")
         epic_eval_ph.markdown(f'<div class="eval-section"><div class="eval-title" style="color:#e05a5a">⚠️ Eval error: {e}</div></div>', unsafe_allow_html=True)
         rag_eval_ph.empty()
 
