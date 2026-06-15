@@ -399,9 +399,32 @@ if run and query.strip():
                 rag_result = data
                 _render_rag(data, rag_ph)
 
+    # Run preference-following evaluation for both responses in parallel
+    from src.evaluator import evaluate_response
+    top_pref = (epic_result or {}).get("top_pref", "")
+    eval_ph_e = col_e_live.empty()
+    eval_ph_r = col_r_live.empty()
+    eval_ph_e.markdown('<div style="font-size:0.7rem;color:#3a5a7a;margin-top:6px">⏳ Evaluating preference following…</div>', unsafe_allow_html=True)
+    eval_ph_r.markdown('<div style="font-size:0.7rem;color:#3a5a7a;margin-top:6px">⏳ Evaluating preference following…</div>', unsafe_allow_html=True)
+
+    def _eval(response):
+        return evaluate_response(query, top_pref, response)
+
+    epic_eval, rag_eval = None, None
+    with ThreadPoolExecutor(max_workers=2) as ex:
+        fe = ex.submit(_eval, (epic_result or {}).get("response", ""))
+        fr = ex.submit(_eval, (rag_result or {}).get("response", ""))
+        epic_eval = fe.result()
+        rag_eval  = fr.result()
+
+    eval_ph_e.empty()
+    eval_ph_r.empty()
+
     st.session_state.result = {
         "query": query, "mbti": mbti,
         "epic": epic_result, "rag": rag_result,
+        "epic_eval": epic_eval, "rag_eval": rag_eval,
+        "top_pref": top_pref,
     }
     st.rerun()
 
@@ -410,8 +433,68 @@ if run and query.strip():
 st.markdown("<hr class='divider'>", unsafe_allow_html=True)
 
 res = st.session_state.result
-er  = res["epic"] if res else None
-rr  = res["rag"]  if res else None
+er  = res["epic"]      if res else None
+rr  = res["rag"]       if res else None
+ee  = res.get("epic_eval") if res else None
+re_ = res.get("rag_eval")  if res else None
+
+
+def _eval_badges(ev: dict, panel_color: str) -> str:
+    """Render preference-following evaluation as HTML badges."""
+    if not ev:
+        return ""
+
+    def badge(label, ok, neutral=False):
+        if neutral:
+            bg, border, txt = "#0d1420", "#1a2535", "#3a5a7a"
+            icon = "○"
+        elif ok:
+            bg, border, txt = "#0a1f14", "#1a4a2a", "#4caf82"
+            icon = "✓"
+        else:
+            bg, border, txt = "#1f0a0a", "#4a1a1a", "#e05a5a"
+            icon = "✗"
+        return (
+            f'<div style="display:inline-flex;align-items:center;gap:4px;'
+            f'background:{bg};border:1px solid {border};border-radius:6px;'
+            f'padding:3px 8px;font-size:0.65rem;color:{txt};margin:2px">'
+            f'<span style="font-weight:700">{icon}</span> {label}</div>'
+        )
+
+    acknow    = ev["acknow"]
+    no_viol   = not ev["violate"]
+    no_halluc = not ev["hallucinate"]
+    helpful   = ev["helpful"]
+    following = ev["preference_following"]
+
+    row = (
+        badge("Acknowledges Pref", acknow, neutral=not acknow)
+        + badge("No Violation",    no_viol)
+        + badge("No Hallucination",no_halluc, neutral=not acknow)
+        + badge("Helpful",         helpful)
+    )
+
+    follow_color = "#4caf82" if following else "#e05a5a"
+    follow_bg    = "#0a1f14" if following else "#1f0a0a"
+    follow_bd    = "#1a4a2a" if following else "#4a1a1a"
+    follow_icon  = "✓" if following else "✗"
+    follow_label = "Preference Following" if following else "Preference Not Followed"
+
+    summary = (
+        f'<div style="margin-top:6px;display:inline-flex;align-items:center;gap:6px;'
+        f'background:{follow_bg};border:1px solid {follow_bd};border-radius:8px;'
+        f'padding:5px 12px;font-size:0.72rem;font-weight:700;color:{follow_color}">'
+        f'<span style="font-size:1rem">{follow_icon}</span> {follow_label}</div>'
+    )
+
+    return (
+        f'<div style="margin-top:8px;padding:8px 10px;background:#060b12;'
+        f'border:1px solid #111e2a;border-radius:8px">'
+        f'<div style="font-size:0.6rem;color:#3a5a7a;text-transform:uppercase;'
+        f'letter-spacing:0.5px;margin-bottom:4px">Preference Evaluation</div>'
+        + row + summary +
+        f'</div>'
+    )
 
 col_e, col_r = st.columns(2)
 
@@ -449,6 +532,8 @@ with col_e:
 
         resp_html = er["response"].replace("\n", "<br>")
         st.markdown(f'<div class="response-box">{resp_html}</div>', unsafe_allow_html=True)
+        if ee:
+            st.markdown(_eval_badges(ee, color), unsafe_allow_html=True)
 
         if er["docs"]:
             with st.expander(f"📂 Retrieved docs ({len(er['docs'])})", expanded=False):
@@ -513,6 +598,8 @@ with col_r:
             f'<div class="response-box" style="border-color:#141e2a">{resp_html}</div>',
             unsafe_allow_html=True,
         )
+        if re_:
+            st.markdown(_eval_badges(re_, "#6a8aaa"), unsafe_allow_html=True)
 
         if rr["docs"]:
             with st.expander(f"📂 Retrieved docs ({len(rr['docs'])})", expanded=False):
@@ -539,34 +626,6 @@ with col_r:
             unsafe_allow_html=True,
         )
 
-# ─── Comparison metrics (shown after query) ───────────────────────────────────
-
-if res:
-    st.markdown("<hr class='divider'>", unsafe_allow_html=True)
-    st.markdown(
-        f'<div style="font-size:0.75rem;color:#3a5a7a;margin-bottom:8px">'
-        f'Comparison for &nbsp;<b style="color:{color}">{res["mbti"]}</b>'
-        f'&nbsp;·&nbsp; "<i>{res["query"]}</i>"</div>',
-        unsafe_allow_html=True,
-    )
-
-    er2, rr2 = res["epic"], res["rag"]
-    c1, c2, c3, c4 = st.columns(4)
-    c1.metric("EPIC Retrieval",  f"{er2['retr_ms']} ms",
-              f"{er2['retr_ms']-rr2['retr_ms']:+.1f} ms vs RAG", delta_color="inverse")
-    c2.metric("RAG Retrieval",   f"{rr2['retr_ms']} ms")
-    c3.metric("EPIC Generation", f"{er2['gen_ms']} ms",
-              f"{er2['gen_ms']-rr2['gen_ms']:+.1f} ms vs RAG", delta_color="off")
-    c4.metric("RAG Generation",  f"{rr2['gen_ms']} ms")
-
-    # Latency bar chart
-    import pandas as pd
-    chart_data = pd.DataFrame({
-        "Stage": ["Retrieval", "Generation"],
-        "EPIC (ms)": [er2["retr_ms"], er2["gen_ms"]],
-        "RAG (ms)":  [rr2["retr_ms"], rr2["gen_ms"]],
-    }).set_index("Stage")
-    st.bar_chart(chart_data, color=[color, "#3a4a5a"])
 
 # ─── Footer ───────────────────────────────────────────────────────────────────
 
