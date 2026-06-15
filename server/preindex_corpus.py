@@ -92,8 +92,6 @@ def chat_completion(llm_url: str, model: str, messages: list[dict], timeout: int
         "messages": messages,
         "max_tokens": 256,
         "temperature": 0.0,
-        # Qwen3 specific: disable thinking to get direct answers
-        "chat_template_kwargs": {"enable_thinking": False},
     }).encode("utf-8")
     req = urllib.request.Request(
         f"{llm_url}/v1/chat/completions",
