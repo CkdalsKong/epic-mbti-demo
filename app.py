@@ -40,13 +40,96 @@ TYPE_TO_GROUP = {t: g for g, v in GROUPS.items() for t in v["types"]}
 TYPE_COLOR    = {t: GROUPS[g]["color"] for t, g in TYPE_TO_GROUP.items()}
 TYPE_BG       = {t: GROUPS[g]["bg"]    for t, g in TYPE_TO_GROUP.items()}
 
-EXAMPLE_QS = [
+EXAMPLE_QS_DEFAULT = [
     "How do I handle conflict with a coworker?",
     "What's the best way to make a big life decision?",
     "How do I deal with feeling overwhelmed at work?",
     "What makes a relationship feel truly fulfilling?",
     "How do I stay motivated when things get hard?",
 ]
+
+MBTI_QUESTIONS = {
+    "INTJ": [
+        "I need to make an important decision by tomorrow — what do you recommend?",
+        "What's the best way to meet new people and build connections?",
+        "How do I deal with a disagreement with someone I respect?",
+    ],
+    "INTP": [
+        "What's the best way to learn something new effectively?",
+        "How do I convince someone who strongly disagrees with me?",
+        "How do I stay motivated when working on a long project?",
+    ],
+    "ENTJ": [
+        "How should I handle an underperforming team member?",
+        "How do I stay motivated when progress feels slow?",
+        "What's the best approach to starting a new project with a team?",
+    ],
+    "ENTP": [
+        "How do I make a good impression in a new job?",
+        "How do I deal with boredom and lack of challenge at work?",
+        "What's the best way to solve a complex problem?",
+    ],
+    "INFJ": [
+        "How do I network effectively for my career?",
+        "What should I consider when choosing a career path?",
+        "How do I deal with feeling disconnected from the people around me?",
+    ],
+    "INFP": [
+        "What should I prioritize in a job search?",
+        "How do I expand my social circle and meet new people?",
+        "How do I handle harsh criticism of my work?",
+    ],
+    "ENFJ": [
+        "How do I make a tough decision that affects my whole team?",
+        "What's the best leadership style to adopt?",
+        "How do I handle a conflict between two people on my team?",
+    ],
+    "ENFP": [
+        "How do I become more productive and focused?",
+        "How should I plan my long-term career?",
+        "What's a good way to recharge after a stressful week?",
+    ],
+    "ISTJ": [
+        "My manager wants me to try a completely new approach — what should I consider?",
+        "How do I deal with unexpected changes to my plans?",
+        "What's the best way to tackle a problem with no established solution?",
+    ],
+    "ISFJ": [
+        "How do I advance my career quickly?",
+        "What should I look for in a new job opportunity?",
+        "How do I say no to someone without hurting the relationship?",
+    ],
+    "ESTJ": [
+        "How do I manage a team with very different working styles?",
+        "How do I handle a team member who consistently ignores the rules?",
+        "What's the best approach to a creative brainstorming project?",
+    ],
+    "ESFJ": [
+        "How do I give honest feedback to a friend who made a bad decision?",
+        "I disagree with a group decision — what should I do?",
+        "How do I handle someone who keeps breaking social norms in our group?",
+    ],
+    "ISTP": [
+        "How do I learn a complex technical skill quickly?",
+        "How do I deal with a manager who micromanages me?",
+        "What's the best team collaboration style for me?",
+    ],
+    "ISFP": [
+        "How do I handle a conflict with a coworker?",
+        "How should I plan my future career?",
+        "How do I deal with harsh feedback on my work?",
+    ],
+    "ESTP": [
+        "How do I prepare for a job interview?",
+        "What's the best way to learn a new skill?",
+        "How do I handle a slow-paced, highly structured work environment?",
+    ],
+    "ESFP": [
+        "How do I manage my personal finances?",
+        "How do I become more disciplined and focused?",
+        "What's a good career path to pursue for long-term stability?",
+    ],
+}
 
 # ─── CSS ──────────────────────────────────────────────────────────────────────
 
@@ -309,8 +392,9 @@ st.markdown("<hr class='divider'>", unsafe_allow_html=True)
 
 q_col, btn_col = st.columns([5, 1])
 with q_col:
-    eq_cols = st.columns(len(EXAMPLE_QS))
-    for col, q in zip(eq_cols, EXAMPLE_QS):
+    example_qs = MBTI_QUESTIONS.get(st.session_state.mbti, EXAMPLE_QS_DEFAULT)
+    eq_cols = st.columns(len(example_qs))
+    for col, q in zip(eq_cols, example_qs):
         short = q[:28] + "…" if len(q) > 28 else q
         if col.button(short, key=f"eq_{q[:12]}", use_container_width=True):
             st.session_state.query = q
