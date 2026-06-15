@@ -199,26 +199,50 @@ def main() -> int:
     persona_indices = parse_persona_range(args.personas, len(personas))
     print(f"Will index personas: {persona_indices}", flush=True)
 
-    print("Loading Contriever...", flush=True)
-    encoder = ContrieverEncoder(CONTRIEVER_MODEL)
-    encoder.encode(["warmup"])
-    print(f"  Contriever ready (dim={encoder.dimension})", flush=True)
+    # ── Embeddings: load cache or encode ──────────────────────────────────
+    cache_vec = os.path.join(args.out_dir, "chunk_vectors.npy")
+    cache_rag  = os.path.join(args.out_dir, "rag_index.faiss")
+    cache_meta = os.path.join(args.out_dir, "rag_chunks.json")
 
-    print("Encoding all corpus chunks...", flush=True)
-    t0 = time.time()
-    chunk_texts = [c["text"] for c in chunks]
-    with tqdm(total=len(chunks), desc="  embedding corpus", unit="chunk", dynamic_ncols=True) as pbar:
-        chunk_vectors = encoder.encode(
-            chunk_texts,
-            on_batch=lambda done, total: pbar.update(done - pbar.n),
-        )
-    print(f"  Encoded {len(chunks)} chunks in {time.time()-t0:.1f}s", flush=True)
+    if os.path.exists(cache_vec) and os.path.exists(cache_rag) and os.path.exists(cache_meta):
+        print(f"Loading cached embeddings from {cache_vec} ...", flush=True)
+        chunk_vectors = np.load(cache_vec)
+        rag_index = faiss.read_index(cache_rag)
+        with open(cache_meta) as f:
+            rag_chunks = json.load(f)
+        rag_index_bytes = len(faiss.serialize_index(rag_index))
+        print(f"  Loaded {len(chunk_vectors)} vectors, RAG index {rag_index_bytes/1e6:.1f} MB", flush=True)
+        # Still need encoder for per-persona instruction embedding
+        print("Loading Contriever (for instruction embedding)...", flush=True)
+        encoder = ContrieverEncoder(CONTRIEVER_MODEL)
+        encoder.encode(["warmup"])
+        print(f"  Contriever ready (dim={encoder.dimension})", flush=True)
+    else:
+        print("Loading Contriever...", flush=True)
+        encoder = ContrieverEncoder(CONTRIEVER_MODEL)
+        encoder.encode(["warmup"])
+        print(f"  Contriever ready (dim={encoder.dimension})", flush=True)
 
-    # Build the shared RAG index (same for all personas)
-    rag_index = build_faiss_flat(chunk_vectors)
-    rag_index_bytes = len(faiss.serialize_index(rag_index))
-    rag_chunks = [{"chunk_text": c.get("display_text", c["text"]), "article_title": c["article_title"]} for c in chunks]
-    print(f"  RAG index: {rag_index_bytes/1e6:.1f} MB, {len(rag_chunks)} chunks", flush=True)
+        print(f"Encoding {len(chunks)} corpus chunks (will cache to {cache_vec})...", flush=True)
+        t0 = time.time()
+        chunk_texts = [c["text"] for c in chunks]
+        with tqdm(total=len(chunks), desc="  embedding corpus", unit="chunk", dynamic_ncols=True) as pbar:
+            chunk_vectors = encoder.encode(
+                chunk_texts,
+                on_batch=lambda done, total: pbar.update(done - pbar.n),
+            )
+        print(f"  Encoded in {time.time()-t0:.1f}s — saving cache...", flush=True)
+        np.save(cache_vec, chunk_vectors)
+        print(f"  Saved {cache_vec}", flush=True)
+
+        # Build shared RAG index and cache it too
+        rag_index = build_faiss_flat(chunk_vectors)
+        rag_index_bytes = len(faiss.serialize_index(rag_index))
+        rag_chunks = [{"chunk_text": c.get("display_text", c["text"]), "article_title": c["article_title"]} for c in chunks]
+        faiss.write_index(rag_index, cache_rag)
+        with open(cache_meta, "w") as f:
+            json.dump(rag_chunks, f, ensure_ascii=False)
+        print(f"  RAG index: {rag_index_bytes/1e6:.1f} MB, {len(rag_chunks)} chunks — cached", flush=True)
 
     for pi in persona_indices:
         persona_data = personas[pi]
@@ -294,11 +318,7 @@ def main() -> int:
         with open(os.path.join(out_dir, "epic_entries.json"), "w") as f:
             json.dump(epic_entries, f, ensure_ascii=False)
 
-        # Save per-persona RAG index (same structure, different file)
-        faiss.write_index(rag_index, os.path.join(out_dir, "rag_index.faiss"))
-        with open(os.path.join(out_dir, "rag_chunks.json"), "w") as f:
-            json.dump(rag_chunks, f, ensure_ascii=False)
-
+        # RAG index is shared — store absolute path in meta instead of copying 2.3GB per persona
         meta = {
             "persona_index": pi,
             "preferences": preferences,
@@ -306,6 +326,8 @@ def main() -> int:
             "rag_chunks": len(rag_chunks),
             "epic_index_bytes": epic_index_bytes,
             "rag_index_bytes": rag_index_bytes,
+            "rag_index_path": os.path.abspath(cache_rag),
+            "rag_chunks_path": os.path.abspath(cache_meta),
             "coarse_threshold": args.coarse_threshold,
             "corpus_size": len(chunks),
         }

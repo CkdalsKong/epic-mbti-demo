@@ -736,8 +736,11 @@ class EPICDemoHandler(BaseHTTPRequestHandler):
                 for e in epic_entries_raw
             ]
 
-            rag_index = faiss.read_index(os.path.join(persona_dir, "rag_index.faiss"))
-            with open(os.path.join(persona_dir, "rag_chunks.json")) as f:
+            # RAG index is shared across personas — prefer the path stored in meta
+            rag_index_path = meta.get("rag_index_path") or os.path.join(persona_dir, "rag_index.faiss")
+            rag_chunks_path = meta.get("rag_chunks_path") or os.path.join(persona_dir, "rag_chunks.json")
+            rag_index = faiss.read_index(rag_index_path)
+            with open(rag_chunks_path) as f:
                 rag_chunks = json.load(f)
 
         except Exception as e:
