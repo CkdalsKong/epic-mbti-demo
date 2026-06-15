@@ -232,13 +232,20 @@ with right_col:
         unsafe_allow_html=True,
     )
 
-    # Preferences
+    # Preferences (collapsible)
     tags = "".join(
         f'<span style="display:inline-block;border-radius:5px;padding:2px 8px;margin:2px;'
         f'background:{bg};border:1px solid {color}44;color:{color}cc;font-size:0.65rem">• {p}</span>'
         for p in meta["preferences"]
     )
-    st.markdown(f'<div style="margin-bottom:6px;line-height:2">{tags}</div>', unsafe_allow_html=True)
+    st.markdown(
+        f'<details style="margin-bottom:6px">'
+        f'<summary style="font-size:0.68rem;color:{color};cursor:pointer;user-select:none;margin-bottom:4px">'
+        f'📋 Preferences used for EPIC indexing</summary>'
+        f'<div style="line-height:2;margin-top:4px">{tags}</div>'
+        f'</details>',
+        unsafe_allow_html=True,
+    )
 
     # Index stats — always visible, compact two-card layout
     try:
