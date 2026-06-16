@@ -12,9 +12,11 @@ enum RealEPICRuntimeError: LocalizedError {
         case .missingHelper:
             "EPIC runtime helper script was not found."
         case .missingPython:
-            "Python runtime was not found at /Users/jam/miniconda3/envs/epic/bin/python3.11."
+            "Local Python runtime was not found."
         case .preloadedRuntimeUnavailable:
-            "Preloaded EPIC runtime is not running. Run /Users/jam/Desktop/InteractiveEPIC/start_epic_runtime.command before launching the app."
+            "Can't reach the EPIC demo server at http://127.0.0.1:8765. " +
+            "Make sure the SSH tunnel to the GPU server is open and " +
+            "epic_demo_server.py is running there (see server/README.md)."
         case .failed(let message):
             message
         case .invalidOutput:

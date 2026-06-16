@@ -167,7 +167,8 @@ struct ContentView: View {
             }
         }
         .padding(.horizontal, 22)
-        .padding(.vertical, 14)
+        .padding(.top, 18)
+        .padding(.bottom, 14)
     }
 
     // ── Mode select (landing) ────────────────────────────────────────────
@@ -1214,8 +1215,10 @@ private struct RuntimeSettingsBar: View {
     let footprint: RealEPICFootprint?
     let threshold: Double
 
+    private let columns = [GridItem(.adaptive(minimum: 220, maximum: 320), spacing: 10)]
+
     var body: some View {
-        HStack(spacing: 10) {
+        LazyVGrid(columns: columns, alignment: .leading, spacing: 10) {
             RuntimeBadge(symbol: "point.3.connected.trianglepath.dotted", title: "Embedding", value: footprint?.embeddingModel ?? "facebook/contriever")
             RuntimeBadge(symbol: "number", title: "Threshold", value: String(format: "tau %.2f", footprint?.threshold ?? threshold))
             RuntimeBadge(symbol: "square.stack.3d.up", title: "Vector index", value: footprint?.vectorIndex ?? "FAISS IndexFlatIP")
