@@ -4,8 +4,10 @@ Pre-compute and curate a fixed set of "known-good" demo questions per persona.
 
 For each persona, this script:
   1. Loads the persona's pre-built EPIC + RAG index (preindex_corpus.py output).
-  2. Builds the FULL candidate pool from PrefWiki's preference_blocks[*].queries
-     (every query, round-robin across blocks — not just the first one).
+  2. Builds a candidate pool per preference: PrefWiki's own ~5 queries PLUS
+     --extra-questions-per-preference LLM-generated ones tailored to that
+     exact preference (not generic) — round-robin across preferences so
+     even a capped slice covers every preference at least once.
   3. Evaluates candidates in batches of --candidates-per-persona, topping up
      with more from the pool until --keep candidates pass (EPIC must have
      preference_following=True) or the pool is exhausted. A persona is never
@@ -33,6 +35,7 @@ Run once after preindex_corpus.py, on the same machine as the vLLM servers:
     --eval-llm-model meta-llama/Llama-3.3-70B-Instruct \
     --eval-llm-server-url http://127.0.0.1:8009 \
     --personas 0-56 \
+    --extra-questions-per-preference 10 \
     --candidates-per-persona 8 \
     --keep 3 \
     --workers 8
@@ -41,6 +44,7 @@ Run once after preindex_corpus.py, on the same machine as the vLLM servers:
 import argparse
 import json
 import os
+import re
 import sys
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -83,20 +87,70 @@ def parse_persona_range(spec: str, total: int) -> list[int]:
     return sorted(i for i in indices if 0 <= i < total)
 
 
-def all_candidate_questions(persona_data: dict) -> list[dict]:
-    """Every (question, preference) pair across all blocks, round-robin
-    ordered (1st query of every block, then 2nd query of every block, ...)
-    so a capped slice still covers all preferences before repeating one."""
-    blocks = [b for b in persona_data["preference_blocks"] if b.get("queries")]
+QUESTION_GEN_SYSTEM = (
+    "You generate realistic questions a user might ask an AI assistant. "
+    "Output ONLY the questions, one per line, no numbering, no bullets, "
+    "no preamble, no explanation."
+)
+
+QUESTION_GEN_USER = """The user has this preference: "{preference}"
+
+Write {n} different, natural-sounding questions this user might ask an AI \
+assistant in everyday situations where this preference would be relevant — \
+but the questions themselves must NOT mention or hint at the preference. \
+They should read like ordinary questions anyone could ask; the preference \
+only matters once the assistant tries to answer.
+
+Vary the phrasing and the specific scenario across questions. Output {n} \
+questions, one per line, nothing else."""
+
+
+def generate_extra_questions(state: EPICDemoState, preference: str, n: int) -> list[str]:
+    """LLM-authored candidate questions tailored to one specific preference —
+    expands the pool well beyond PrefWiki's fixed 5 queries per block."""
+    if n <= 0:
+        return []
+    user_prompt = QUESTION_GEN_USER.format(preference=preference, n=n)
+    try:
+        reply = _generate_full(state, QUESTION_GEN_SYSTEM, user_prompt)
+    except Exception as e:
+        print(f"\n  [question-gen] LLM error: {e}", flush=True)
+        return []
+
+    lines = []
+    for line in reply.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        # Strip any numbering/bullets the model adds despite instructions
+        line = re.sub(r"^[\-\*\d]+[\.\)]?\s*", "", line).strip()
+        if len(line) > 8:
+            lines.append(line)
+    return lines[:n]
+
+
+def build_candidate_pool(state: EPICDemoState, persona_data: dict, extra_per_preference: int) -> list[dict]:
+    """PrefWiki's own queries plus LLM-generated extras, round-robin across
+    preferences so the early part of the pool already covers every
+    preference at least once."""
+    blocks = [b for b in persona_data["preference_blocks"] if b.get("preference")]
     if not blocks:
         return []
-    max_queries = max(len(b["queries"]) for b in blocks)
+
+    per_block: list[list[dict]] = []
+    for block in blocks:
+        pref = block["preference"]
+        own = [{"question": q["question"], "preference": pref} for q in block.get("queries", [])]
+        extra_texts = generate_extra_questions(state, pref, extra_per_preference) if extra_per_preference > 0 else []
+        extra = [{"question": q, "preference": pref} for q in extra_texts]
+        per_block.append(own + extra)
+
+    max_len = max((len(b) for b in per_block), default=0)
     out = []
-    for qi in range(max_queries):
-        for block in blocks:
-            queries = block["queries"]
-            if qi < len(queries):
-                out.append({"question": queries[qi]["question"], "preference": block["preference"]})
+    for qi in range(max_len):
+        for block_questions in per_block:
+            if qi < len(block_questions):
+                out.append(block_questions[qi])
     return out
 
 
@@ -166,8 +220,11 @@ def main() -> int:
     parser.add_argument("--personas", default="0-56")
     parser.add_argument("--candidates-per-persona", type=int, default=8,
                         help="Batch size: evaluate this many candidates at a time, topping up "
-                             "with more (across ALL of the persona's preference-block queries, "
-                             "round-robin) until --keep good ones are found or candidates run out")
+                             "with more from the pool until --keep good ones are found or the "
+                             "pool runs out")
+    parser.add_argument("--extra-questions-per-preference", type=int, default=10,
+                        help="LLM-generated extra candidate questions per preference, on top of "
+                             "PrefWiki's own ~5 — set to 0 to use only PrefWiki's queries")
     parser.add_argument("--keep", type=int, default=3, help="How many curated questions to keep per persona")
     parser.add_argument("--workers", type=int, default=8, help="Parallel candidates evaluated at once")
     parser.add_argument("--resume", action="store_true", help="Skip personas that already have curated_qa.json")
@@ -207,9 +264,11 @@ def main() -> int:
             print(f"  [{pi}] Failed to load session: {e}", flush=True)
             continue
 
-        all_candidates = all_candidate_questions(personas[pi])
+        print(f"  Building candidate pool (PrefWiki queries + "
+              f"{args.extra_questions_per_preference} LLM-generated per preference)...", flush=True)
+        all_candidates = build_candidate_pool(state, personas[pi], args.extra_questions_per_preference)
         if not all_candidates:
-            print(f"  [{pi}] WARNING: persona has no preference_blocks with queries — skipping", flush=True)
+            print(f"  [{pi}] WARNING: persona has no preference_blocks — skipping", flush=True)
             continue
 
         # Evaluate in batches, topping up with more candidates until we
