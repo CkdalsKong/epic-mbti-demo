@@ -744,18 +744,27 @@ final class EPICDemoViewModel: ObservableObject {
     /// Instantly show a pre-computed Q&A — no network call, no waiting.
     /// Populates the same state the live /generate + /evaluate flow would,
     /// so the existing Generation/Evaluation screens render it unchanged.
-    func selectCuratedQA(_ qa: CuratedQA) {
+    /// Picking a curated question only seeds a known-good question text —
+    /// the actual retrieval/generation/evaluation always runs live, so the
+    /// demo shows the real thing happening, not a replayed cached answer.
+    func useCuratedQuestion(_ qa: CuratedQA) {
         selectedCuratedQA = qa
         generationQuestion = qa.question
-        epicResponseText = qa.epicResponse
-        ragResponseText = qa.ragResponse
-        epicRetrievedDocs = qa.epicDocs
-        ragRetrievedDocs = qa.ragDocs
-        topPreference = qa.preference
-        generationComplete = true
-        generationError = nil
-        evaluationResult = EvaluationResult(epic: qa.epicEval, rag: qa.ragEval)
-        evaluationError = nil
+        retrievalQuestion = qa.question
+    }
+
+    /// Curated chip tapped on the Retrieval screen: seed the question and
+    /// run retrieval immediately.
+    func useCuratedQuestionForRetrieval(_ qa: CuratedQA) {
+        useCuratedQuestion(qa)
+        runRetrievalDemo()
+    }
+
+    /// Curated chip tapped on the Generation screen: seed the question and
+    /// run live generation immediately.
+    func useCuratedQuestionForGeneration(_ qa: CuratedQA) {
+        useCuratedQuestion(qa)
+        runGenerate()
     }
 
     /// Clears all Retrieval-Demo state (loaded persona index, retrieval

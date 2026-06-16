@@ -341,6 +341,29 @@ struct ContentView: View {
                 ragBytes: demo.ragIndexBytes ?? 0
             )
 
+            // Suggested questions — same set used on the Generation screen,
+            // so the question you pick here can carry straight through.
+            if demo.isLoadingCuratedQuestions {
+                HStack(spacing: 8) {
+                    ProgressView().controlSize(.small)
+                    Text("Loading suggested questions…").font(.caption).foregroundStyle(.secondary)
+                }
+            } else if !demo.curatedQuestions.isEmpty {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 10) {
+                        ForEach(demo.curatedQuestions) { qa in
+                            CuratedQuestionChip(
+                                qa: qa,
+                                isSelected: demo.selectedCuratedQA?.id == qa.id
+                            ) {
+                                demo.useCuratedQuestionForRetrieval(qa)
+                            }
+                        }
+                    }
+                    .padding(.vertical, 2)
+                }
+            }
+
             // Query input
             HStack(spacing: 10) {
                 TextField("Ask a question to see how retrieval differs…", text: $demo.retrievalQuestion)
@@ -3108,13 +3131,13 @@ extension ContentView {
             .background(Color.teal.opacity(0.07))
             .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
 
-            // Curated, pre-vetted questions — instant, no LLM calls
-            GuideBanner(text: "Click a pre-vetted question for an instant result, or type your own and click \"Generate\" for a live run.")
+            // Suggested questions — click one to run a live generation
+            GuideBanner(text: "Click a suggested question, or type your own and click \"Generate.\"")
 
             if demo.isLoadingCuratedQuestions {
                 HStack(spacing: 8) {
                     ProgressView().controlSize(.small)
-                    Text("Loading curated questions…").font(.caption).foregroundStyle(.secondary)
+                    Text("Loading suggested questions…").font(.caption).foregroundStyle(.secondary)
                 }
             } else if !demo.curatedQuestions.isEmpty {
                 ScrollView(.horizontal, showsIndicators: false) {
@@ -3124,14 +3147,14 @@ extension ContentView {
                                 qa: qa,
                                 isSelected: demo.selectedCuratedQA?.id == qa.id
                             ) {
-                                demo.selectCuratedQA(qa)
+                                demo.useCuratedQuestionForGeneration(qa)
                             }
                         }
                     }
                     .padding(.vertical, 2)
                 }
             } else if let err = demo.curatedQuestionsError {
-                Text("Curated questions unavailable: \(err)")
+                Text("Suggested questions unavailable: \(err)")
                     .font(.caption2)
                     .foregroundStyle(.secondary)
             }
@@ -3346,33 +3369,19 @@ private struct CuratedQuestionChip: View {
 
     var body: some View {
         Button(action: action) {
-            VStack(alignment: .leading, spacing: 6) {
-                HStack(spacing: 6) {
-                    if qa.isStrongContrast {
-                        Label("EPIC wins", systemImage: "star.fill")
-                            .font(.caption2.weight(.bold))
-                            .foregroundStyle(.white)
-                            .padding(.horizontal, 7)
-                            .padding(.vertical, 2)
-                            .background(Color.green)
-                            .clipShape(Capsule())
-                    }
-                    Spacer()
-                }
-                Text(qa.question)
-                    .font(.callout.weight(.semibold))
-                    .foregroundStyle(.primary)
-                    .lineLimit(3)
-                    .multilineTextAlignment(.leading)
-            }
-            .padding(12)
-            .frame(width: 220, alignment: .topLeading)
-            .background(isSelected ? Color.teal.opacity(0.18) : Color.teal.opacity(0.08))
-            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .stroke(Color.teal.opacity(isSelected ? 0.7 : 0.2), lineWidth: isSelected ? 2 : 1)
-            )
+            Text(qa.question)
+                .font(.callout.weight(.semibold))
+                .foregroundStyle(.primary)
+                .lineLimit(3)
+                .multilineTextAlignment(.leading)
+                .padding(12)
+                .frame(width: 220, alignment: .topLeading)
+                .background(isSelected ? Color.teal.opacity(0.18) : Color.teal.opacity(0.08))
+                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .stroke(Color.teal.opacity(isSelected ? 0.7 : 0.2), lineWidth: isSelected ? 2 : 1)
+                )
         }
         .buttonStyle(.plain)
     }
