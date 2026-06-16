@@ -1,12 +1,21 @@
 """
-Semantic chunking with contextual augmentation.
+Two chunking strategies, both writing to separate output files:
 
-Strategy:
-1. Split text into sentences
-2. Embed sentences with a lightweight model
-3. Merge adjacent sentences until cosine similarity drops below threshold
-4. Prepend [source / MBTI / topic] context to each chunk before final embedding
-   → preserves cross-chunk meaning that fixed-size splits lose
+1. semantic_chunk() / run_chunking() → data/chunks/chunks.jsonl
+   Split into sentences, embed them, merge adjacent sentences until cosine
+   similarity drops below SEMANTIC_THRESHOLD. Tends to over-fragment into
+   single-sentence, context-free chunks when adjacent sentences in normal
+   prose don't clear the threshold.
+
+2. wordwise_chunk() / run_chunking_wordwise() → data/chunks/chunks_wordwise.jsonl
+   Faithful port of the real EPIC pipeline's chunking
+   (EPIC_git/preprocess/build_chunks.py): pure word-count grouping, no
+   semantic splitting. Sentences accumulate until ~100 words, producing
+   coherent multi-sentence chunks. Run with `python -m src.chunking --wordwise`.
+
+Both prepend [source / topic] context to each chunk before final embedding
+(build_contextual_chunk) → preserves cross-chunk meaning that fixed-size
+splits alone would lose.
 """
 
 import re
@@ -125,6 +134,59 @@ def semantic_chunk(
     return [c for c in chunks if len(c.strip()) > 30]
 
 
+def clean_text(text: str) -> str:
+    # Remove tags in the form of &lt;...&gt;
+    return re.sub(r"&lt;.*?&gt;", "", text).strip()
+
+
+def wordwise_chunk(text: str, chunk_size: int = 100) -> list[str]:
+    """Faithful port of the real EPIC pipeline's chunking
+    (EPIC_git/preprocess/build_chunks.py: chunk_documents_sentencewise) —
+    pure word-count chunking, NO semantic similarity splitting.
+
+    Sentences accumulate into a chunk; once adding the next sentence would
+    exceed chunk_size, that sentence is included anyway and the chunk
+    closes. This produces coherent multi-sentence ~100-word chunks instead
+    of semantic_chunk's frequent context-free single-sentence fragments
+    (which happen whenever two adjacent sentences fail to clear
+    SEMANTIC_THRESHOLD, well before hitting the word cap).
+    """
+    clean = clean_text(text)
+    sentences = re.split(r"(?<=[.!?]) +", clean)
+    chunks: list[str] = []
+    current_chunk: list[str] = []
+    current_length = 0
+
+    for sentence in sentences:
+        words = sentence.split()
+        n_words = len(words)
+        if n_words == 0:
+            continue
+
+        # A single sentence longer than chunk_size gets its own chunk.
+        if n_words > chunk_size:
+            if current_chunk:
+                chunks.append(" ".join(current_chunk))
+                current_chunk, current_length = [], 0
+            chunks.append(sentence)
+            continue
+
+        if current_length + n_words > chunk_size:
+            # Include this sentence, then close the chunk.
+            current_chunk.append(sentence)
+            current_length += n_words
+            chunks.append(" ".join(current_chunk))
+            current_chunk, current_length = [], 0
+        else:
+            current_chunk.append(sentence)
+            current_length += n_words
+
+    if current_chunk:
+        chunks.append(" ".join(current_chunk))
+
+    return [c for c in chunks if len(c.strip()) > 30]
+
+
 def build_contextual_chunk(
     chunk_text: str,
     source: str,
@@ -199,5 +261,62 @@ def run_chunking():
         print("[chunking] No chunks produced")
 
 
+def process_shared_corpus_wordwise(chunk_size: int = 100) -> list[dict]:
+    """Word-count chunking (no embedding model needed) — alternative to
+    process_shared_corpus()'s semantic splitting. See wordwise_chunk()."""
+    corpus_file = CORPUS_DIR / "corpus.jsonl"
+    if not corpus_file.exists():
+        print("  [chunking] corpus.jsonl not found — run collect first")
+        return []
+
+    with open(corpus_file) as f:
+        docs = [json.loads(l) for l in f if l.strip()]
+    print(f"  [chunking] {len(docs)} docs → word-count chunking (chunk_size={chunk_size})...")
+
+    chunks_out = []
+    for doc_idx, doc in enumerate(tqdm(docs, desc="chunking (wordwise)")):
+        text = doc.get("text", "")
+        if len(text) < 50:
+            continue
+        source = doc.get("source", "unknown")
+        topic = doc.get("topic", "")
+
+        raw_chunks = wordwise_chunk(text, chunk_size=chunk_size)
+        for i, chunk in enumerate(raw_chunks):
+            contextual = build_contextual_chunk(chunk, source, topic)
+            chunks_out.append({
+                "chunk_id": f"doc{doc_idx}_chunk{i}",
+                "source": source,
+                "topic": topic,
+                "raw_text": chunk,
+                "text": contextual,
+                "parent_url": doc.get("url", ""),
+            })
+
+    return chunks_out
+
+
+def run_chunking_wordwise(out_name: str = "chunks_wordwise.jsonl", chunk_size: int = 100):
+    """Writes to a NEW file — does not touch chunks.jsonl, so the existing
+    semantic-chunked corpus stays available for comparison/rollback."""
+    out_file = CHUNKS_DIR / out_name
+    if out_file.exists():
+        count = sum(1 for _ in open(out_file) if _.strip())
+        print(f"[chunking] {out_name} already exists ({count} chunks) — skipping (delete to rebuild)")
+        return
+
+    chunks = process_shared_corpus_wordwise(chunk_size=chunk_size)
+    if chunks:
+        with open(out_file, "w") as f:
+            for c in chunks:
+                f.write(json.dumps(c, ensure_ascii=False) + "\n")
+        print(f"  [chunking] {len(chunks)} chunks → {out_file}")
+    else:
+        print("[chunking] No chunks produced")
+
+
 if __name__ == "__main__":
-    run_chunking()
+    if "--wordwise" in sys.argv:
+        run_chunking_wordwise()
+    else:
+        run_chunking()
