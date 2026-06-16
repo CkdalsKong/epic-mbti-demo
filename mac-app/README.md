@@ -1,122 +1,97 @@
-# Interactive EPIC
+# Interactive EPIC (macOS Demo App)
 
-Interactive EPIC is a macOS demo app that visualizes EPIC indexing for a Wikipedia document:
+A native macOS SwiftUI app for demoing EPIC end-to-end. Originally forked from
+[ginjae/InteractiveEPIC](https://github.com/ginjae/InteractiveEPIC), which only
+visualized live EPIC indexing over a single Wikipedia article. This version adds
+a second mode — **Retrieval Demo** — that runs against a pre-indexed, full-scale
+corpus (Wikipedia, Reddit, arXiv, …) and breaks down retrieval latency, memory
+footprint, and query steering between EPIC and Plain RAG.
 
-1. Set a PrefWiki persona.
+The app talks to `server/epic_demo_server.py` (see [`../server`](../server)) over
+HTTP at `http://127.0.0.1:8765`, normally reached through an SSH tunnel to the
+GPU machine running the indexing/eval LLMs and the pre-built indexes.
+
+## Two demo modes
+
+On launch you choose one of two flows:
+
+### 1. Indexing Demo
+The original live-indexing walkthrough, unchanged in spirit:
+
+`Preferences → Wikipedia → Chunking → Indexing → Results`
+
+1. Pick a PrefWiki persona (or edit preferences).
 2. Search and extract a Wikipedia page.
 3. Chunk the document.
-4. Compare indiscriminate Existing RAG indexing with EPIC indexing.
-5. Inspect kept chunks, generated instructions, and related preferences.
+4. Run EPIC: coarse cosine filter → LLM fine verification → instruction
+   generation, animated chunk-by-chunk.
+5. Inspect the resulting EPIC memory vs. naive RAG memory: which chunks were
+   kept, what instruction was generated, which preference it matches.
 
-## Runtime Pieces
+### 2. Retrieval Demo
+Skips live indexing — loads a persona's **pre-built** EPIC index over the full
+corpus (see [`server/preindex_corpus.py`](../server/preindex_corpus.py)) and
+focuses on retrieval behavior:
 
-- **macOS app**: SwiftUI app in `InteractiveEPIC.xcodeproj`
-- **Local EPIC runtime**: `InteractiveEPIC/epic_runtime_server.py`
+`Persona → Retrieval Breakdown`
+
+1. Pick a persona and load its pre-indexed EPIC memory (instant — no LLM calls).
+2. See EPIC memory size vs. Plain RAG memory size side by side, with a reduction
+   factor (e.g. "EPIC stores 47.9× less than Plain RAG").
+3. Ask a question. Watch an animated retrieval pipeline: embed query → search →
+   done.
+4. See a **latency breakdown bar** per system in milliseconds — shared
+   query-embedding time (gray) vs. each system's index-search time (teal for
+   EPIC's small, preference-steered instruction index; orange for RAG's much
+   larger raw chunk index) — plus the top-k retrieved docs, with EPIC's
+   matched instruction shown alongside each doc (the "query steering" in
+   action).
+
+Generation (EPIC-RAG vs. Plain RAG, in parallel) and 4-metric evaluation
+(acknowledge / violate / hallucinate / helpful) are implemented in the
+codebase but currently hidden from the Retrieval Demo flow — see
+`DemoStage.flow(for:)` in `InteractiveEPIC/ContentView.swift` to re-enable them.
+
+## Runtime pieces
+
+- **macOS app**: SwiftUI, `InteractiveEPIC.xcodeproj`
+- **Demo server**: `../server/epic_demo_server.py`, reached at `http://127.0.0.1:8765`
 - **Embedding model**: `facebook/contriever`
-- **Vector index**: `FAISS IndexFlatIP`
-- **LLM server**: OpenAI-compatible vLLM endpoint at `http://127.0.0.1:8123`
-- **LLM model**: `meta-llama/Llama-3.1-8B-Instruct`
+- **Vector index**: FAISS `IndexFlatIP`
+- **Indexing LLM**: e.g. `meta-llama/Llama-3.1-8B-Instruct` via vLLM
+- **Evaluation LLM**: e.g. `meta-llama/Llama-3.3-70B-Instruct` (FP8) via vLLM, separate port
 
-The app talks to the local EPIC runtime at `http://127.0.0.1:8765`. The local runtime talks to vLLM at `http://127.0.0.1:8123`.
+## Connecting to the server
 
-## 1. Create the Conda Environment
-
-From the repository root:
+The server normally runs on a remote GPU machine. Tunnel it to your Mac:
 
 ```zsh
-cd /path/to/InteractiveEPIC
-conda create -n epic python=3.11
-conda activate epic
-pip install -r requirements.txt
+# 1. Forward the GPU pod's SSH port (example: behind a k8s pod)
+kubectl port-forward -n <namespace> pod/<pod-name> 2222:22
+
+# 2. Tunnel the demo server's port through that SSH connection
+ssh <gpu-host-alias> -L 8765:localhost:8765
 ```
 
-The Python runtime uses `facebook/contriever` with `local_files_only=True`, so the model must already exist in your Hugging Face cache. If needed, download it once while the `epic` environment is active:
+See [`../server/README.md`](../server/README.md) for how to start the server itself.
+
+## Build & run
 
 ```zsh
-python -c "from transformers import AutoModel, AutoTokenizer; AutoTokenizer.from_pretrained('facebook/contriever'); AutoModel.from_pretrained('facebook/contriever')"
+cd mac-app
+xcodebuild -scheme InteractiveEPIC -destination "platform=macOS" build \
+  CODE_SIGNING_ALLOWED=NO CODE_SIGN_IDENTITY=""
+
+# Run the built binary directly (avoids Launch Services issues in dev builds)
+"$(xcodebuild -scheme InteractiveEPIC -showBuildSettings 2>/dev/null \
+  | awk -F'= ' '/ TARGET_BUILD_DIR/{d=$2} / EXECUTABLE_PATH/{e=$2} END{print d"/"e}')" &
 ```
 
-## 2. Start or Connect vLLM
+Or just open `InteractiveEPIC.xcodeproj` in Xcode and hit Run.
 
-Start vLLM so it is reachable from this Mac at port `8123`.
+## Attribution
 
-If vLLM is running on a remote server, create an SSH tunnel:
-
-```zsh
-ssh ubi -L 8123:localhost:8123
-```
-
-In another terminal, verify the forwarded vLLM endpoint:
-
-```zsh
-curl -i http://127.0.0.1:8123/health
-curl -sS http://127.0.0.1:8123/v1/models | python -m json.tool
-```
-
-The model list should include:
-
-```txt
-meta-llama/Llama-3.1-8B-Instruct
-```
-
-## 3. Start the Local EPIC Runtime
-
-Run:
-
-```zsh
-./start_epic_runtime.sh
-```
-
-This script:
-
-1. Activates the `epic` conda environment.
-2. Checks vLLM at `http://127.0.0.1:8123/health`.
-3. Loads `facebook/contriever`.
-4. Starts the EPIC runtime server at `http://127.0.0.1:8765`.
-
-Keep this terminal open while using the app.
-
-To stop the runtime:
-
-```zsh
-./stop_epic_runtime.sh
-```
-
-## 4. Run the Mac App
-
-### Option A: Xcode
-
-Open the project:
-
-```zsh
-open InteractiveEPIC.xcodeproj
-```
-
-Select the `InteractiveEPIC` scheme, then press Run.
-
-### Option B: Command Line
-
-Build and open the app:
-
-```zsh
-xcodebuild \
-  -project InteractiveEPIC.xcodeproj \
-  -scheme InteractiveEPIC \
-  -destination platform=macOS \
-  -derivedDataPath /private/tmp/InteractiveEPICDerivedData \
-  CODE_SIGNING_ALLOWED=NO \
-  build
-
-open /private/tmp/InteractiveEPICDerivedData/Build/Products/Debug/InteractiveEPIC.app
-```
-
-## Expected Order
-
-Use this order for demos:
-
-1. Create and install the `epic` conda environment.
-2. Start vLLM or open the SSH tunnel to vLLM.
-3. Confirm `http://127.0.0.1:8123/health` returns HTTP 200.
-4. Run `./start_epic_runtime.sh`.
-5. Launch the macOS app.
-6. Choose a persona, search Wikipedia, chunk the document, then start indexing.
+Forked from [ginjae/InteractiveEPIC](https://github.com/ginjae/InteractiveEPIC).
+This version adds: the Retrieval Demo mode, `/load_persona` + `/retrieve`
+server endpoints, the latency-breakdown and memory-comparison UI, and the
+multi-GPU corpus pre-indexing pipeline in `../server/`.
