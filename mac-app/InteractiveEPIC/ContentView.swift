@@ -396,33 +396,38 @@ struct ContentView: View {
 
             // Results: latency breakdown + doc comparison
             if demo.retrievalStep == .done, let result = demo.retrievalResult {
-                LatencyBreakdownBar(
-                    embedMs: result.embedMs,
-                    steerMs: result.steerMs,
-                    matchedPreference: result.matchedPreference,
-                    epicSearchMs: result.epicSearchMs,
-                    ragSearchMs: result.ragSearchMs
-                )
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 16) {
+                        LatencyBreakdownBar(
+                            embedMs: result.embedMs,
+                            steerMs: result.steerMs,
+                            matchedPreference: result.matchedPreference,
+                            epicSearchMs: result.epicSearchMs,
+                            ragSearchMs: result.ragSearchMs
+                        )
 
-                HStack(alignment: .top, spacing: 16) {
-                    RetrievalResultPanel(
-                        title: "EPIC-RAG",
-                        color: .teal,
-                        symbol: "bolt.horizontal.circle.fill",
-                        latencyMs: result.epicRetrMs,
-                        docs: result.epicDocs,
-                        isEPIC: true
-                    )
-                    RetrievalResultPanel(
-                        title: "Plain RAG",
-                        color: .orange,
-                        symbol: "tray.full",
-                        latencyMs: result.ragRetrMs,
-                        docs: result.ragDocs,
-                        isEPIC: false
-                    )
+                        HStack(alignment: .top, spacing: 16) {
+                            RetrievalResultPanel(
+                                title: "EPIC-RAG",
+                                color: .teal,
+                                symbol: "bolt.horizontal.circle.fill",
+                                latencyMs: result.epicRetrMs,
+                                docs: result.epicDocs,
+                                isEPIC: true
+                            )
+                            RetrievalResultPanel(
+                                title: "Plain RAG",
+                                color: .orange,
+                                symbol: "tray.full",
+                                latencyMs: result.ragRetrMs,
+                                docs: result.ragDocs,
+                                isEPIC: false
+                            )
+                        }
+                        .frame(minHeight: 420)
+                    }
+                    .padding(.vertical, 2)
                 }
-                .frame(maxHeight: .infinity)
             } else if !demo.isRetrieving {
                 EmptyState(
                     symbol: "magnifyingglass",
