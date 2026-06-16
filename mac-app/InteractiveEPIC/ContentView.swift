@@ -26,7 +26,9 @@ private enum DemoStage: Int, CaseIterable {
         switch mode {
         case nil: [.modeSelect]
         case .indexing: [.preferences, .wikipedia, .chunking, .comparison, .results]
-        case .retrieval: [.personaSelect, .retrieval, .generation, .evaluation]
+        // Generation/Evaluation stages stay implemented but are hidden from the
+        // retrieval flow for now — re-add here to surface them again.
+        case .retrieval: [.personaSelect, .retrieval]
         }
     }
 
@@ -291,13 +293,7 @@ struct ContentView: View {
                 Button { withAnimation { stage = .personaSelect } } label: {
                     Label("Persona", systemImage: "arrow.left")
                 }
-                Button {
-                    withAnimation { stage = .generation }
-                } label: {
-                    Label("Continue to Generation", systemImage: "arrow.right")
-                }
-                .buttonStyle(.borderedProminent)
-                .disabled(!demo.personaLoaded)
+                // Generation/Evaluation are implemented but hidden from this flow for now.
             }
 
             // Memory footprint comparison
