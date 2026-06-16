@@ -1,21 +1,44 @@
 import AppKit
 import SwiftUI
 
+/// Top-level demo mode, chosen on the landing screen.
+private enum DemoMode {
+    case indexing   // live EPIC indexing walkthrough on a Wikipedia article
+    case retrieval  // pre-indexed corpus → retrieval breakdown → generation → evaluation
+}
+
 private enum DemoStage: Int, CaseIterable {
+    case modeSelect
+    // Indexing-mode stages
     case preferences
     case wikipedia
     case chunking
     case comparison
+    // Retrieval-mode stages
+    case personaSelect
+    case retrieval
     case generation
     case evaluation
     case results
 
+    /// Stages shown as pills in the header, depending on the active mode.
+    static func flow(for mode: DemoMode?) -> [DemoStage] {
+        switch mode {
+        case nil: [.modeSelect]
+        case .indexing: [.preferences, .wikipedia, .chunking, .comparison]
+        case .retrieval: [.personaSelect, .retrieval, .generation, .evaluation]
+        }
+    }
+
     var title: String {
         switch self {
+        case .modeSelect: "Start"
         case .preferences: "Preferences"
         case .wikipedia: "Wikipedia"
         case .chunking: "Chunking"
         case .comparison: "Indexing"
+        case .personaSelect: "Persona"
+        case .retrieval: "Retrieval"
         case .generation: "Generation"
         case .evaluation: "Evaluation"
         case .results: "Results"
@@ -24,10 +47,13 @@ private enum DemoStage: Int, CaseIterable {
 
     var subtitle: String {
         switch self {
+        case .modeSelect: "Choose a demo"
         case .preferences: "Persona setup"
         case .wikipedia: "Search and extract"
         case .chunking: "Document chunks"
         case .comparison: "RAG vs EPIC"
+        case .personaSelect: "Load pre-indexed memory"
+        case .retrieval: "Query steering, EPIC vs RAG"
         case .generation: "EPIC vs Plain RAG"
         case .evaluation: "Preference following"
         case .results: "Memory outcome"
@@ -36,10 +62,13 @@ private enum DemoStage: Int, CaseIterable {
 
     var symbol: String {
         switch self {
+        case .modeSelect: "house"
         case .preferences: "person.text.rectangle"
         case .wikipedia: "globe"
         case .chunking: "scissors"
         case .comparison: "square.split.2x1"
+        case .personaSelect: "person.crop.circle"
+        case .retrieval: "arrow.triangle.2.circlepath.circle"
         case .generation: "bubble.left.and.bubble.right"
         case .evaluation: "checkmark.seal"
         case .results: "chart.bar.xaxis"
@@ -49,7 +78,8 @@ private enum DemoStage: Int, CaseIterable {
 
 struct ContentView: View {
     @StateObject private var demo = EPICDemoViewModel()
-    @State private var stage: DemoStage = .preferences
+    @State private var stage: DemoStage = .modeSelect
+    @State private var mode: DemoMode?
     @State private var selectedResultChunk: DocumentChunk?
     @State private var animatedChunkCount = 0
     @State private var chunkingReplayToken = 0
@@ -63,6 +93,8 @@ struct ContentView: View {
 
             Group {
                 switch stage {
+                case .modeSelect:
+                    modeSelectScreen
                 case .preferences:
                     preferencesScreen
                 case .wikipedia:
@@ -71,6 +103,10 @@ struct ContentView: View {
                     chunkingScreen
                 case .comparison:
                     comparisonScreen
+                case .personaSelect:
+                    personaSelectScreen
+                case .retrieval:
+                    retrievalScreen
                 case .generation:
                     generationScreen
                 case .evaluation:
@@ -96,20 +132,259 @@ struct ContentView: View {
     private var header: some View {
         HStack(spacing: 18) {
             VStack(alignment: .leading, spacing: 3) {
-                Text("Interactive EPIC")
-                    .font(.system(size: 22, weight: .bold, design: .rounded))
+                HStack(spacing: 8) {
+                    Text("Interactive EPIC")
+                        .font(.system(size: 22, weight: .bold, design: .rounded))
+                    if mode != nil {
+                        Button {
+                            withAnimation {
+                                mode = nil
+                                stage = .modeSelect
+                            }
+                        } label: {
+                            Label("Home", systemImage: "house")
+                                .font(.caption)
+                        }
+                        .buttonStyle(.borderless)
+                        .foregroundStyle(.secondary)
+                    }
+                }
             }
 
             Spacer(minLength: 16)
 
             HStack(spacing: 8) {
-                ForEach(DemoStage.allCases, id: \.self) { item in
+                ForEach(DemoStage.flow(for: mode), id: \.self) { item in
                     StagePill(stage: item, currentStage: stage)
                 }
             }
         }
         .padding(.horizontal, 22)
         .padding(.vertical, 14)
+    }
+
+    // ── Mode select (landing) ────────────────────────────────────────────
+
+    private var modeSelectScreen: some View {
+        VStack(spacing: 28) {
+            Spacer()
+            VStack(spacing: 8) {
+                Text("Interactive EPIC")
+                    .font(.system(size: 34, weight: .bold, design: .rounded))
+                Text("Choose which part of the pipeline to demo.")
+                    .font(.title3)
+                    .foregroundStyle(.secondary)
+            }
+
+            HStack(spacing: 24) {
+                ModeCard(
+                    symbol: "scissors",
+                    title: "Indexing Demo",
+                    detail: "Walk through EPIC indexing live: pick a persona, search Wikipedia, chunk a document, run coarse + fine filtering, and watch the EPIC memory get built step by step.",
+                    color: .teal
+                ) {
+                    withAnimation {
+                        mode = .indexing
+                        stage = .preferences
+                    }
+                }
+
+                ModeCard(
+                    symbol: "arrow.triangle.2.circlepath.circle",
+                    title: "Retrieval Demo",
+                    detail: "Load a persona's pre-built EPIC memory over the full corpus, compare it against Plain RAG — memory footprint, retrieval latency, query steering — then generate and evaluate responses.",
+                    color: .orange
+                ) {
+                    withAnimation {
+                        mode = .retrieval
+                        stage = .personaSelect
+                    }
+                }
+            }
+            .frame(maxWidth: 900)
+
+            Spacer()
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .padding(40)
+    }
+
+    // ── Persona select (retrieval mode) ─────────────────────────────────
+
+    private var personaSelectScreen: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            ScreenTitle(
+                symbol: "person.crop.circle",
+                title: "Select a Persona",
+                subtitle: "Load that persona's pre-indexed EPIC memory over the full corpus."
+            )
+
+            PersonaPresetSelector(
+                selectedPersonaIndex: Binding(
+                    get: { demo.persona.personaIndex },
+                    set: {
+                        demo.selectPersonaPreset(index: $0)
+                        demo.personaLoaded = false
+                    }
+                ),
+                personas: demo.availablePersonas
+            )
+
+            VStack(alignment: .leading, spacing: 14) {
+                HStack(spacing: 12) {
+                    if demo.isLoadingPersona {
+                        ProgressView("Loading persona \(demo.persona.personaIndex)'s memory…")
+                    } else {
+                        Button {
+                            demo.loadPersonaIndex()
+                        } label: {
+                            Label(demo.personaLoaded ? "Reload Persona \(demo.persona.personaIndex)" : "Load Persona \(demo.persona.personaIndex)",
+                                  systemImage: "arrow.down.circle.fill")
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .tint(.teal)
+                    }
+
+                    if demo.personaLoaded {
+                        Button {
+                            withAnimation { stage = .retrieval }
+                        } label: {
+                            Label("Continue to Retrieval", systemImage: "arrow.right")
+                        }
+                        .buttonStyle(.borderedProminent)
+                    }
+                }
+
+                if let err = demo.personaLoadError {
+                    ErrorBanner(message: err)
+                }
+
+                if demo.personaLoaded {
+                    HStack(spacing: 10) {
+                        StatBadge(symbol: "bolt.horizontal.circle.fill", label: "EPIC \(demo.epicEntryCount ?? 0) entries", color: .teal)
+                        StatBadge(symbol: "tray.full", label: "RAG \(demo.ragChunkCount ?? 0) chunks", color: .orange)
+                        if let bytes = demo.epicIndexBytes {
+                            StatBadge(symbol: "memorychip", label: String(format: "EPIC %.1f MB", Double(bytes)/1_048_576), color: .teal)
+                        }
+                        if let bytes = demo.ragIndexBytes {
+                            StatBadge(symbol: "memorychip", label: String(format: "RAG %.1f MB", Double(bytes)/1_048_576), color: .orange)
+                        }
+                    }
+                }
+            }
+            .padding(18)
+            .background(Color.teal.opacity(0.06))
+            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+
+            Spacer()
+        }
+        .padding(26)
+    }
+
+    // ── Retrieval breakdown (retrieval mode) ────────────────────────────
+
+    private var retrievalScreen: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            HStack(alignment: .top) {
+                ScreenTitle(
+                    symbol: "arrow.triangle.2.circlepath.circle",
+                    title: "Retrieval Breakdown",
+                    subtitle: "EPIC instruction-steered retrieval vs Plain RAG"
+                )
+                Spacer()
+                Button { withAnimation { stage = .personaSelect } } label: {
+                    Label("Persona", systemImage: "arrow.left")
+                }
+                Button {
+                    withAnimation { stage = .generation }
+                } label: {
+                    Label("Continue to Generation", systemImage: "arrow.right")
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(!demo.personaLoaded)
+            }
+
+            // Memory footprint comparison
+            HStack(spacing: 16) {
+                MemoryComparisonCard(
+                    title: "EPIC Memory",
+                    color: .teal,
+                    symbol: "bolt.horizontal.circle.fill",
+                    entryLabel: "instructions",
+                    entryCount: demo.epicEntryCount ?? 0,
+                    bytes: demo.epicIndexBytes ?? 0
+                )
+                MemoryComparisonCard(
+                    title: "Plain RAG Memory",
+                    color: .orange,
+                    symbol: "tray.full",
+                    entryLabel: "raw chunks",
+                    entryCount: demo.ragChunkCount ?? 0,
+                    bytes: demo.ragIndexBytes ?? 0
+                )
+            }
+
+            // Query input
+            HStack(spacing: 10) {
+                TextField("Ask a question to see how retrieval differs…", text: $demo.retrievalQuestion)
+                    .textFieldStyle(.roundedBorder)
+                    .font(.title3)
+                    .onSubmit { demo.runRetrievalDemo() }
+                Button {
+                    demo.runRetrievalDemo()
+                } label: {
+                    Label(demo.isRetrieving ? "Retrieving…" : "Run Retrieval", systemImage: "magnifyingglass.circle.fill")
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(demo.isRetrieving || demo.retrievalQuestion.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !demo.personaLoaded)
+            }
+
+            if !demo.personaLoaded {
+                Label("Load a persona first.", systemImage: "exclamationmark.triangle")
+                    .font(.caption)
+                    .foregroundStyle(.orange)
+            }
+
+            if let err = demo.retrievalError {
+                ErrorBanner(message: err)
+            }
+
+            // Animated step tracker
+            if demo.isRetrieving || demo.retrievalStep != .idle {
+                RetrievalStepTracker(currentStep: demo.retrievalStep)
+            }
+
+            // Results: latency + doc comparison
+            if demo.retrievalStep == .done, let result = demo.retrievalResult {
+                HStack(alignment: .top, spacing: 16) {
+                    RetrievalResultPanel(
+                        title: "EPIC-RAG",
+                        color: .teal,
+                        symbol: "bolt.horizontal.circle.fill",
+                        latencyMs: result.epicRetrMs,
+                        docs: result.epicDocs,
+                        isEPIC: true
+                    )
+                    RetrievalResultPanel(
+                        title: "Plain RAG",
+                        color: .orange,
+                        symbol: "tray.full",
+                        latencyMs: result.ragRetrMs,
+                        docs: result.ragDocs,
+                        isEPIC: false
+                    )
+                }
+                .frame(maxHeight: .infinity)
+            } else if !demo.isRetrieving {
+                EmptyState(
+                    symbol: "magnifyingglass",
+                    title: "Run a retrieval query",
+                    detail: "Type a question and press Run Retrieval to see how EPIC steers toward preference-aligned docs versus Plain RAG's raw similarity search."
+                )
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+        }
+        .padding(26)
     }
 
     private var preferencesScreen: some View {
@@ -376,32 +651,12 @@ struct ContentView: View {
                 .disabled(demo.isRunningEPIC)
 
                 Button {
-                    Task {
-                        await demo.runEPICAndWait()
-                        if demo.runtimeFootprint != nil {
-                            try? await Task.sleep(nanoseconds: 1_200_000_000)
-                            stage = .generation
-                        }
-                    }
+                    Task { await demo.runEPICAndWait() }
                 } label: {
                     Label(demo.runtimeFootprint == nil ? "Start EPIC" : "Run Again", systemImage: "bolt.fill")
                 }
                 .buttonStyle(.borderedProminent)
                 .disabled(demo.isRunningEPIC || demo.chunks.isEmpty)
-
-                Button {
-                    stage = .generation
-                } label: {
-                    Label("Generation", systemImage: "bubble.left.and.bubble.right")
-                }
-                .disabled(demo.runtimeFootprint == nil)
-
-                Button {
-                    stage = .results
-                } label: {
-                    Label("Results", systemImage: "chart.bar.xaxis")
-                }
-                .disabled(demo.runtimeFootprint == nil)
             }
 
             RuntimeSettingsBar(footprint: demo.runtimeFootprint, threshold: demo.coarseThreshold)
@@ -2729,8 +2984,8 @@ extension ContentView {
                     subtitle: "Compare EPIC-RAG vs Plain RAG responses"
                 )
                 Spacer()
-                Button { stage = .comparison } label: {
-                    Label("Indexing", systemImage: "arrow.left")
+                Button { stage = .retrieval } label: {
+                    Label("Retrieval", systemImage: "arrow.left")
                 }
                 Button {
                     guard !demo.generationQuestion.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
@@ -2752,14 +3007,28 @@ extension ContentView {
                 .disabled(!demo.generationComplete)
             }
 
-            // Corpus banner
+            // Corpus banner + load button
             HStack(spacing: 10) {
                 Image(systemName: "memorychip")
                     .foregroundStyle(.teal)
-                Text("Responses are retrieved from **EPIC pre-indexed memory** built over a large-scale corpus (Wikipedia, Reddit, arXiv, and more) — not the article above.")
+                Text("Generating with persona \(demo.persona.personaIndex)'s **EPIC pre-indexed memory** over the full corpus (Wikipedia, Reddit, arXiv, and more).")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
+                Spacer()
+                if demo.isLoadingPersona {
+                    ProgressView().controlSize(.small)
+                } else {
+                    Button {
+                        demo.loadPersonaIndex()
+                    } label: {
+                        Label(demo.personaLoaded ? "Reload Persona \(demo.persona.personaIndex)" : "Load Corpus Index",
+                              systemImage: demo.personaLoaded ? "arrow.clockwise" : "arrow.down.circle")
+                            .font(.caption.weight(.semibold))
+                    }
+                    .buttonStyle(.bordered)
+                    .tint(.teal)
+                }
             }
             .padding(.horizontal, 14)
             .padding(.vertical, 10)
@@ -3040,11 +3309,11 @@ private struct GenerationPanel: View {
             if retrLatencyMs != nil || indexBytes != nil {
                 HStack(spacing: 8) {
                     if let ms = retrLatencyMs {
-                        StatBadge(symbol: "clock", label: String(format: "%.0f ms", ms), color: color)
+                        StatBadge(symbol: "clock", label: String(format: "Retrieval %.0f ms", ms), color: color)
                     }
                     if let bytes = indexBytes {
                         let mb = Double(bytes) / 1_048_576.0
-                        StatBadge(symbol: "memorychip", label: String(format: "%.1f MB", mb), color: color)
+                        StatBadge(symbol: "memorychip", label: String(format: "Index %.1f MB", mb), color: color)
                     }
                     if let count = entryCount {
                         StatBadge(symbol: "list.bullet", label: "\(count) entries", color: color)
@@ -3100,7 +3369,7 @@ private struct GenerationPanel: View {
     }
 }
 
-private struct StatBadge: View {
+struct StatBadge: View {
     let symbol: String
     let label: String
     let color: Color
@@ -3117,6 +3386,218 @@ private struct StatBadge: View {
         .padding(.vertical, 4)
         .background(color.opacity(0.10))
         .clipShape(Capsule())
+    }
+}
+
+// ── Mode select card ─────────────────────────────────────────────────────
+
+private struct ModeCard: View {
+    let symbol: String
+    let title: String
+    let detail: String
+    let color: Color
+    let action: () -> Void
+
+    @State private var isHovering = false
+
+    var body: some View {
+        Button(action: action) {
+            VStack(alignment: .leading, spacing: 14) {
+                Image(systemName: symbol)
+                    .font(.system(size: 30, weight: .semibold))
+                    .foregroundStyle(color)
+                    .frame(width: 56, height: 56)
+                    .background(color.opacity(0.12))
+                    .clipShape(Circle())
+                Text(title)
+                    .font(.title2.weight(.bold))
+                Text(detail)
+                    .font(.body)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                Spacer(minLength: 0)
+                Label("Start", systemImage: "arrow.right.circle.fill")
+                    .font(.headline)
+                    .foregroundStyle(color)
+            }
+            .padding(22)
+            .frame(maxWidth: .infinity, minHeight: 260, alignment: .topLeading)
+            .background(Color(nsColor: .controlBackgroundColor))
+            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .stroke(color.opacity(isHovering ? 0.6 : 0.22), lineWidth: isHovering ? 2 : 1)
+            )
+            .scaleEffect(isHovering ? 1.015 : 1.0)
+        }
+        .buttonStyle(.plain)
+        .onHover { isHovering = $0 }
+        .animation(.easeOut(duration: 0.15), value: isHovering)
+    }
+}
+
+// ── Memory comparison card (Retrieval screen) ──────────────────────────────
+
+private struct MemoryComparisonCard: View {
+    let title: String
+    let color: Color
+    let symbol: String
+    let entryLabel: String
+    let entryCount: Int
+    let bytes: Int
+
+    private var mb: Double { Double(bytes) / 1_048_576 }
+
+    var body: some View {
+        HStack(spacing: 14) {
+            Image(systemName: symbol)
+                .font(.title2.weight(.semibold))
+                .foregroundStyle(color)
+                .frame(width: 44, height: 44)
+                .background(color.opacity(0.12))
+                .clipShape(Circle())
+            VStack(alignment: .leading, spacing: 3) {
+                Text(title)
+                    .font(.subheadline.weight(.bold))
+                Text("\(entryCount.formatted()) \(entryLabel)")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            Spacer()
+            Text(String(format: "%.1f MB", mb))
+                .font(.title3.weight(.bold).monospacedDigit())
+                .foregroundStyle(color)
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity)
+        .background(color.opacity(0.06))
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .stroke(color.opacity(0.2))
+        )
+    }
+}
+
+// ── Animated retrieval step tracker ─────────────────────────────────────
+
+private struct RetrievalStepTracker: View {
+    let currentStep: EPICDemoViewModel.RetrievalStep
+
+    private let steps: [EPICDemoViewModel.RetrievalStep] = [.embedding, .searching, .done]
+
+    var body: some View {
+        HStack(spacing: 0) {
+            ForEach(Array(steps.enumerated()), id: \.element) { index, step in
+                let reached = currentStep.rawValue >= step.rawValue
+                HStack(spacing: 8) {
+                    ZStack {
+                        Circle()
+                            .fill(reached ? Color.teal : Color.gray.opacity(0.25))
+                            .frame(width: 22, height: 22)
+                        if step == currentStep && step != .done {
+                            ProgressView()
+                                .controlSize(.mini)
+                                .tint(.white)
+                        } else if reached {
+                            Image(systemName: "checkmark")
+                                .font(.caption2.weight(.bold))
+                                .foregroundStyle(.white)
+                        }
+                    }
+                    Text(step.label)
+                        .font(.caption.weight(reached ? .semibold : .regular))
+                        .foregroundStyle(reached ? .primary : .secondary)
+                }
+                if index < steps.count - 1 {
+                    Rectangle()
+                        .fill(reached ? Color.teal.opacity(0.4) : Color.gray.opacity(0.15))
+                        .frame(height: 2)
+                        .frame(maxWidth: 40)
+                }
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
+        .background(Color(nsColor: .controlBackgroundColor).opacity(0.6))
+        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+    }
+}
+
+// ── Retrieval result panel (doc list + latency, no generation) ─────────────
+
+private struct RetrievalResultPanel: View {
+    let title: String
+    let color: Color
+    let symbol: String
+    let latencyMs: Double
+    let docs: [RetrievedDoc]
+    let isEPIC: Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 10) {
+                Image(systemName: symbol)
+                    .font(.headline.weight(.semibold))
+                    .foregroundStyle(color)
+                    .frame(width: 32, height: 32)
+                    .background(color.opacity(0.12))
+                    .clipShape(Circle())
+                Text(title)
+                    .font(.headline.weight(.bold))
+                Spacer()
+                StatBadge(symbol: "clock", label: String(format: "%.0f ms", latencyMs), color: color)
+            }
+
+            if docs.isEmpty {
+                Text("No matches above threshold.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .padding(.vertical, 8)
+            } else {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 8) {
+                        ForEach(Array(docs.prefix(5).enumerated()), id: \.element.id) { index, doc in
+                            VStack(alignment: .leading, spacing: 4) {
+                                HStack(spacing: 6) {
+                                    Text("#\(index + 1)")
+                                        .font(.caption2.weight(.bold))
+                                        .foregroundStyle(color)
+                                    Text(doc.articleTitle)
+                                        .font(.caption.weight(.semibold))
+                                        .lineLimit(1)
+                                    Spacer()
+                                    Text(String(format: "score %.2f", doc.score))
+                                        .font(.caption2.monospacedDigit())
+                                        .foregroundStyle(.secondary)
+                                }
+                                if isEPIC, let instruction = doc.instruction {
+                                    Text(instruction)
+                                        .font(.caption2.weight(.medium))
+                                        .foregroundStyle(.teal)
+                                        .lineLimit(2)
+                                }
+                                Text(doc.chunkText)
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(2)
+                            }
+                            .padding(10)
+                            .background(color.opacity(0.05))
+                            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                        }
+                    }
+                }
+            }
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .background(Color(nsColor: .textBackgroundColor))
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .stroke(color.opacity(0.22))
+        )
     }
 }
 

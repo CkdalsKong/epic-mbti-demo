@@ -495,6 +495,8 @@ class EPICDemoHandler(BaseHTTPRequestHandler):
             self.handle_run(payload)
         elif path == "/load_persona":
             self.handle_load_persona(payload)
+        elif path == "/retrieve":
+            self.handle_retrieve(payload)
         elif path == "/generate":
             self.handle_generate(payload)
         elif path == "/evaluate":
@@ -768,6 +770,41 @@ class EPICDemoHandler(BaseHTTPRequestHandler):
             "rag_chunks": len(rag_chunks),
             "epic_index_bytes": session.epic_index_bytes,
             "rag_index_bytes": session.rag_index_bytes,
+        })
+
+    # ── /retrieve (retrieval-only, no generation) ───────────────────────────
+    def handle_retrieve(self, payload: dict) -> None:
+        """Run retrieval only — for the Retrieval demo screen. Fast, non-streaming."""
+        state: EPICDemoState = self.server.state
+        session = state.session
+
+        if session is None:
+            self.write_json({"error": "No indexed session. Load a persona or run /run first."}, 400)
+            return
+
+        question: str = payload.get("question", "")
+        top_k: int = int(payload.get("top_k", 5))
+        if not question:
+            self.write_json({"error": "Missing 'question'"}, 400)
+            return
+
+        t0 = time.time()
+        epic_docs = epic_retrieve(state, session, question, top_k)
+        epic_embed_ms = (time.time() - t0) * 1000  # includes query embedding + search
+
+        t0 = time.time()
+        rag_docs = rag_retrieve(state, session, question, top_k)
+        rag_embed_ms = (time.time() - t0) * 1000
+
+        self.write_json({
+            "epic_docs": epic_docs,
+            "rag_docs": rag_docs,
+            "epic_retr_ms": round(epic_embed_ms, 1),
+            "rag_retr_ms": round(rag_embed_ms, 1),
+            "epic_index_bytes": session.epic_index_bytes,
+            "rag_index_bytes": session.rag_index_bytes,
+            "epic_entries": len(session.epic_entries),
+            "rag_chunks": len(session.rag_chunks),
         })
 
     def handle_evaluate(self, payload: dict) -> None:

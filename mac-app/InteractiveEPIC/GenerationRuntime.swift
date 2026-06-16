@@ -237,6 +237,65 @@ final class GenerationRuntime {
         return EvaluationResult(epic: payload.epic, rag: payload.rag)
     }
 
+    // ── Retrieval-only (no generation) ──────────────────────────────────────
+
+    struct RetrieveOnlyResult {
+        let epicDocs: [RetrievedDoc]
+        let ragDocs: [RetrievedDoc]
+        let epicRetrMs: Double
+        let ragRetrMs: Double
+        let epicIndexBytes: Int
+        let ragIndexBytes: Int
+        let epicEntries: Int
+        let ragChunks: Int
+    }
+
+    func retrieveOnly(question: String, topK: Int = 5) async throws -> RetrieveOnlyResult {
+        let url = baseURL.appendingPathComponent("retrieve")
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.timeoutInterval = 60
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONSerialization.data(withJSONObject: ["question": question, "top_k": topK])
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let http = response as? HTTPURLResponse else {
+            throw GenerationRuntimeError.failed("Invalid HTTP response.")
+        }
+        if http.statusCode == 400 {
+            throw GenerationRuntimeError.noSession
+        }
+        guard (200..<300).contains(http.statusCode) else {
+            let msg = (try? JSONSerialization.jsonObject(with: data) as? [String: Any])?["error"] as? String ?? "HTTP \(http.statusCode)"
+            throw GenerationRuntimeError.failed(msg)
+        }
+
+        struct Payload: Codable {
+            let epicDocs: [RetrievedDoc]
+            let ragDocs: [RetrievedDoc]
+            let epicRetrMs: Double
+            let ragRetrMs: Double
+            let epicIndexBytes: Int
+            let ragIndexBytes: Int
+            let epicEntries: Int
+            let ragChunks: Int
+
+            enum CodingKeys: String, CodingKey {
+                case epicDocs = "epic_docs", ragDocs = "rag_docs"
+                case epicRetrMs = "epic_retr_ms", ragRetrMs = "rag_retr_ms"
+                case epicIndexBytes = "epic_index_bytes", ragIndexBytes = "rag_index_bytes"
+                case epicEntries = "epic_entries", ragChunks = "rag_chunks"
+            }
+        }
+        let p = try JSONDecoder().decode(Payload.self, from: data)
+        return RetrieveOnlyResult(
+            epicDocs: p.epicDocs, ragDocs: p.ragDocs,
+            epicRetrMs: p.epicRetrMs, ragRetrMs: p.ragRetrMs,
+            epicIndexBytes: p.epicIndexBytes, ragIndexBytes: p.ragIndexBytes,
+            epicEntries: p.epicEntries, ragChunks: p.ragChunks
+        )
+    }
+
     // ── Load pre-built persona index ──────────────────────────────────────
 
     struct LoadPersonaResult {

@@ -1,5 +1,6 @@
 import Combine
 import Foundation
+import SwiftUI
 
 @MainActor
 final class EPICDemoViewModel: ObservableObject {
@@ -717,6 +718,61 @@ final class EPICDemoViewModel: ObservableObject {
             personaLoaded = true
         } catch {
             personaLoadError = error.localizedDescription
+        }
+    }
+
+    // ── Retrieval-only demo (detailed breakdown, no generation) ────────────
+
+    enum RetrievalStep: Int, CaseIterable {
+        case idle, embedding, searching, done
+
+        var label: String {
+            switch self {
+            case .idle: "Waiting for a query…"
+            case .embedding: "Embedding query with Contriever…"
+            case .searching: "Searching EPIC instruction index + RAG chunk index…"
+            case .done: "Retrieval complete"
+            }
+        }
+    }
+
+    @Published var retrievalQuestion = ""
+    @Published var retrievalStep: RetrievalStep = .idle
+    @Published var isRetrieving = false
+    @Published var retrievalError: String?
+    @Published var retrievalResult: GenerationRuntime.RetrieveOnlyResult?
+
+    func runRetrievalDemo() {
+        guard !retrievalQuestion.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        Task { await performRetrievalDemo() }
+    }
+
+    private func performRetrievalDemo() async {
+        isRetrieving = true
+        retrievalError = nil
+        retrievalResult = nil
+        defer { isRetrieving = false }
+
+        withAnimation { retrievalStep = .embedding }
+        try? await Task.sleep(nanoseconds: 450_000_000)
+        withAnimation { retrievalStep = .searching }
+
+        do {
+            let result = try await generationRuntime.retrieveOnly(question: retrievalQuestion, topK: 5)
+            try? await Task.sleep(nanoseconds: 300_000_000)
+            withAnimation { retrievalStep = .done }
+            retrievalResult = result
+            epicRetrLatencyMs = result.epicRetrMs
+            ragRetrLatencyMs = result.ragRetrMs
+            epicIndexBytes = result.epicIndexBytes
+            ragIndexBytes = result.ragIndexBytes
+            epicEntryCount = result.epicEntries
+            ragChunkCount = result.ragChunks
+            epicRetrievedDocs = result.epicDocs
+            ragRetrievedDocs = result.ragDocs
+        } catch {
+            withAnimation { retrievalStep = .idle }
+            retrievalError = error.localizedDescription
         }
     }
 
