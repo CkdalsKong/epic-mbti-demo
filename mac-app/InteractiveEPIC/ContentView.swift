@@ -28,7 +28,7 @@ private enum DemoStage: Int, CaseIterable {
         case .indexing: [.preferences, .wikipedia, .chunking, .comparison, .results]
         // Generation/Evaluation stay implemented but hidden from this flow —
         // re-add .generation/.evaluation here to surface them again.
-        case .retrieval: [.personaSelect, .retrieval]
+        case .retrieval: [.personaSelect, .retrieval, .generation, .evaluation]
         }
     }
 
@@ -119,7 +119,7 @@ struct ContentView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        .frame(minWidth: 1320, minHeight: 860)
+        .frame(minWidth: 1440, minHeight: 920)
         .controlSize(.large)
         .font(.system(size: 15))
         .background(Color(nsColor: .windowBackgroundColor))
@@ -174,36 +174,36 @@ struct ContentView: View {
     // ── Mode select (landing) ────────────────────────────────────────────
 
     private var modeSelectScreen: some View {
-        VStack(spacing: 36) {
+        VStack(spacing: 44) {
             Spacer()
 
-            VStack(spacing: 14) {
+            VStack(spacing: 18) {
                 Text("ICML 2026")
-                    .font(.headline.weight(.bold))
+                    .font(.title3.weight(.bold))
                     .foregroundStyle(.white)
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 6)
+                    .padding(.horizontal, 20)
+                    .padding(.vertical, 9)
                     .background(Color.teal)
                     .clipShape(Capsule())
 
                 Text("From Volume to Value")
-                    .font(.system(size: 52, weight: .bold, design: .rounded))
+                    .font(.system(size: 68, weight: .bold, design: .rounded))
                 Text("Preference-Aligned Memory Construction for On-Device RAG")
-                    .font(.title)
+                    .font(.system(size: 30, weight: .medium))
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
                 Text("Changmin Lee · Jaemin Kim · Taesik Gong")
-                    .font(.title3.weight(.medium))
+                    .font(.title2.weight(.medium))
                     .foregroundStyle(.secondary)
             }
             .multilineTextAlignment(.center)
-            .frame(maxWidth: 900)
+            .frame(maxWidth: 1100)
 
             Text("Choose which part of the pipeline to demo")
-                .font(.title2.weight(.semibold))
+                .font(.system(size: 26, weight: .semibold))
                 .foregroundStyle(.secondary)
 
-            HStack(spacing: 28) {
+            HStack(spacing: 32) {
                 ModeCard(
                     symbol: "scissors",
                     title: "Indexing Demo",
@@ -228,7 +228,7 @@ struct ContentView: View {
                     }
                 }
             }
-            .frame(maxWidth: 1000)
+            .frame(maxWidth: 1120)
 
             Spacer()
         }
@@ -322,7 +322,13 @@ struct ContentView: View {
                 Button { withAnimation { stage = .personaSelect } } label: {
                     Label("Persona", systemImage: "arrow.left")
                 }
-                // Generation/Evaluation are implemented but hidden from this flow for now.
+                Button {
+                    withAnimation { stage = .generation }
+                } label: {
+                    Label("Continue to Generation", systemImage: "arrow.right")
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(!demo.personaLoaded)
             }
 
             GuideBanner(text: "Type a question below, then click \"Run Retrieval\" to compare EPIC vs Plain RAG.", color: .orange)
@@ -3102,9 +3108,37 @@ extension ContentView {
             .background(Color.teal.opacity(0.07))
             .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
 
-            // Question input
+            // Curated, pre-vetted questions — instant, no LLM calls
+            GuideBanner(text: "Click a pre-vetted question for an instant result, or type your own and click \"Generate\" for a live run.")
+
+            if demo.isLoadingCuratedQuestions {
+                HStack(spacing: 8) {
+                    ProgressView().controlSize(.small)
+                    Text("Loading curated questions…").font(.caption).foregroundStyle(.secondary)
+                }
+            } else if !demo.curatedQuestions.isEmpty {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 10) {
+                        ForEach(demo.curatedQuestions) { qa in
+                            CuratedQuestionChip(
+                                qa: qa,
+                                isSelected: demo.selectedCuratedQA?.id == qa.id
+                            ) {
+                                demo.selectCuratedQA(qa)
+                            }
+                        }
+                    }
+                    .padding(.vertical, 2)
+                }
+            } else if let err = demo.curatedQuestionsError {
+                Text("Curated questions unavailable: \(err)")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+
+            // Question input (live generation)
             HStack(spacing: 10) {
-                TextField("Ask a question…", text: $demo.generationQuestion)
+                TextField("...or type your own question", text: $demo.generationQuestion)
                     .textFieldStyle(.roundedBorder)
                     .font(.title3)
                     .onSubmit { demo.runGenerate() }
@@ -3118,31 +3152,6 @@ extension ContentView {
 
             if let err = demo.generationError {
                 ErrorBanner(message: err)
-            }
-
-            // Suggestion chips
-            if demo.generationQuestion.isEmpty, !demo.persona.preferenceBlocks.isEmpty {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 8) {
-                        ForEach(Array(demo.persona.preferenceBlocks.prefix(5)), id: \.id) { block in
-                            if let q = block.queries.first {
-                                Button {
-                                    demo.generationQuestion = q.question
-                                } label: {
-                                    Text(q.question)
-                                        .font(.caption)
-                                        .lineLimit(2)
-                                        .multilineTextAlignment(.leading)
-                                        .padding(.horizontal, 10)
-                                        .padding(.vertical, 6)
-                                        .background(Color.teal.opacity(0.10))
-                                        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-                                }
-                                .buttonStyle(.plain)
-                            }
-                        }
-                    }
-                }
             }
 
             // Side-by-side responses
@@ -3327,6 +3336,47 @@ extension ContentView {
 }
 
 // ── Generation Panel ──────────────────────────────────────────────────────
+
+// ── Curated question chip ────────────────────────────────────────────────
+
+private struct CuratedQuestionChip: View {
+    let qa: CuratedQA
+    let isSelected: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(spacing: 6) {
+                    if qa.isStrongContrast {
+                        Label("EPIC wins", systemImage: "star.fill")
+                            .font(.caption2.weight(.bold))
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 7)
+                            .padding(.vertical, 2)
+                            .background(Color.green)
+                            .clipShape(Capsule())
+                    }
+                    Spacer()
+                }
+                Text(qa.question)
+                    .font(.callout.weight(.semibold))
+                    .foregroundStyle(.primary)
+                    .lineLimit(3)
+                    .multilineTextAlignment(.leading)
+            }
+            .padding(12)
+            .frame(width: 220, alignment: .topLeading)
+            .background(isSelected ? Color.teal.opacity(0.18) : Color.teal.opacity(0.08))
+            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .stroke(Color.teal.opacity(isSelected ? 0.7 : 0.2), lineWidth: isSelected ? 2 : 1)
+            )
+        }
+        .buttonStyle(.plain)
+    }
+}
 
 private struct GenerationPanel: View {
     let title: String

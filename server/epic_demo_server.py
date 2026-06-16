@@ -418,6 +418,59 @@ def evaluate_single(state: EPICDemoState, question: str, preference: str, respon
 
 # ── Retrieval ─────────────────────────────────────────────────────────────
 
+def load_persona_session(state: "EPICDemoState", persona_index: int) -> DemoSession:
+    """Load a pre-built persona index from disk (built by preindex_corpus.py).
+    Shared by the /load_persona HTTP handler and offline scripts (curate_qa.py)
+    that need a session without going through the server."""
+    if not state.preindex_dir:
+        raise RuntimeError("Server/state was not configured with a preindex_dir.")
+
+    persona_dir = os.path.join(state.preindex_dir, f"persona_{persona_index}")
+    meta_path = os.path.join(persona_dir, "meta.json")
+    if not os.path.exists(meta_path):
+        raise FileNotFoundError(
+            f"No pre-indexed data for persona {persona_index}. "
+            f"Run preindex_corpus.py first. (looked in {persona_dir})"
+        )
+
+    with open(meta_path) as f:
+        meta = json.load(f)
+
+    epic_index = faiss.read_index(os.path.join(persona_dir, "epic_index.faiss"))
+    with open(os.path.join(persona_dir, "epic_entries.json")) as f:
+        epic_entries_raw = json.load(f)
+    epic_entries = [
+        {
+            "chunk_text": e["chunk_text"],
+            "article_title": e["article_title"],
+            "instruction": e.get("instruction", ""),
+            "preference": e.get("preference", ""),
+        }
+        for e in epic_entries_raw
+    ]
+
+    # RAG index is shared across personas — prefer the path stored in meta
+    rag_index_path = meta.get("rag_index_path") or os.path.join(persona_dir, "rag_index.faiss")
+    rag_chunks_path = meta.get("rag_chunks_path") or os.path.join(persona_dir, "rag_chunks.json")
+    rag_index = faiss.read_index(rag_index_path)
+    with open(rag_chunks_path) as f:
+        rag_chunks = json.load(f)
+
+    session = DemoSession()
+    session.session_id = str(uuid.uuid4())
+    session.epic_index = epic_index
+    session.epic_entries = epic_entries
+    session.epic_index_bytes = meta.get("epic_index_bytes", 0)
+    session.rag_index = rag_index
+    session.rag_chunks = rag_chunks
+    session.rag_index_bytes = meta.get("rag_index_bytes", 0)
+    session.preferences = meta.get("preferences", [])
+    session.preference_vectors = (
+        state.encoder.encode(session.preferences) if session.preferences else None
+    )
+    return session
+
+
 def epic_steer_query(session: DemoSession, q_vec: np.ndarray) -> tuple[np.ndarray, str | None, float]:
     """EPIC query steering: compare the query to the persona's preference
     embeddings, take the top-1 match, and fold it into the query vector
@@ -531,6 +584,8 @@ class EPICDemoHandler(BaseHTTPRequestHandler):
             self.handle_run(payload)
         elif path == "/load_persona":
             self.handle_load_persona(payload)
+        elif path == "/curated_questions":
+            self.handle_curated_questions(payload)
         elif path == "/retrieve":
             self.handle_retrieve(payload)
         elif path == "/generate":
@@ -751,55 +806,14 @@ class EPICDemoHandler(BaseHTTPRequestHandler):
             return
         persona_index = int(persona_index)
 
-        persona_dir = os.path.join(state.preindex_dir, f"persona_{persona_index}")
-        meta_path = os.path.join(persona_dir, "meta.json")
-        if not os.path.exists(meta_path):
-            self.write_json({
-                "error": f"No pre-indexed data for persona {persona_index}. "
-                         f"Run preindex_corpus.py first. (looked in {persona_dir})"
-            }, 404)
-            return
-
         try:
-            with open(meta_path) as f:
-                meta = json.load(f)
-
-            epic_index = faiss.read_index(os.path.join(persona_dir, "epic_index.faiss"))
-            with open(os.path.join(persona_dir, "epic_entries.json")) as f:
-                epic_entries_raw = json.load(f)
-            epic_entries = [
-                {
-                    "chunk_text": e["chunk_text"],
-                    "article_title": e["article_title"],
-                    "instruction": e.get("instruction", ""),
-                    "preference": e.get("preference", ""),
-                }
-                for e in epic_entries_raw
-            ]
-
-            # RAG index is shared across personas — prefer the path stored in meta
-            rag_index_path = meta.get("rag_index_path") or os.path.join(persona_dir, "rag_index.faiss")
-            rag_chunks_path = meta.get("rag_chunks_path") or os.path.join(persona_dir, "rag_chunks.json")
-            rag_index = faiss.read_index(rag_index_path)
-            with open(rag_chunks_path) as f:
-                rag_chunks = json.load(f)
-
+            session = load_persona_session(state, persona_index)
+        except FileNotFoundError as e:
+            self.write_json({"error": str(e)}, 404)
+            return
         except Exception as e:
             self.write_json({"error": f"Failed to load persona index: {e}"}, 500)
             return
-
-        session = DemoSession()
-        session.session_id = str(uuid.uuid4())
-        session.epic_index = epic_index
-        session.epic_entries = epic_entries
-        session.epic_index_bytes = meta.get("epic_index_bytes", 0)
-        session.rag_index = rag_index
-        session.rag_chunks = rag_chunks
-        session.rag_index_bytes = meta.get("rag_index_bytes", 0)
-        session.preferences = meta.get("preferences", [])
-        session.preference_vectors = (
-            state.encoder.encode(session.preferences) if session.preferences else None
-        )
 
         with state._lock:
             state._session = session
@@ -808,11 +822,36 @@ class EPICDemoHandler(BaseHTTPRequestHandler):
             "ok": True,
             "persona_index": persona_index,
             "session_id": session.session_id,
-            "epic_entries": len(epic_entries),
-            "rag_chunks": len(rag_chunks),
+            "epic_entries": len(session.epic_entries),
+            "rag_chunks": len(session.rag_chunks),
             "epic_index_bytes": session.epic_index_bytes,
             "rag_index_bytes": session.rag_index_bytes,
         })
+
+    # ── /curated_questions ──────────────────────────────────────────────
+    def handle_curated_questions(self, payload: dict) -> None:
+        """Return pre-computed (generated + evaluated) Q&A for a persona —
+        built offline by curate_qa.py. Instant, no LLM calls."""
+        state: EPICDemoState = self.server.state
+
+        if not state.preindex_dir:
+            self.write_json({"error": "Server was not started with --preindex-dir."}, 400)
+            return
+
+        persona_index = payload.get("persona_index")
+        if persona_index is None:
+            self.write_json({"error": "Missing 'persona_index'."}, 400)
+            return
+        persona_index = int(persona_index)
+
+        curated_path = os.path.join(state.preindex_dir, f"persona_{persona_index}", "curated_qa.json")
+        if not os.path.exists(curated_path):
+            self.write_json({"error": f"No curated Q&A for persona {persona_index}. Run curate_qa.py first."}, 404)
+            return
+
+        with open(curated_path) as f:
+            curated = json.load(f)
+        self.write_json({"persona_index": persona_index, "questions": curated})
 
     # ── /retrieve (retrieval-only, no generation) ───────────────────────────
     def handle_retrieve(self, payload: dict) -> None:

@@ -65,6 +65,47 @@ struct EvaluationResult: Hashable {
     let rag: MetricResult
 }
 
+/// A pre-computed, pre-vetted Q&A — generated + evaluated offline by
+/// curate_qa.py so the live demo never has to wait on an LLM call.
+struct CuratedQA: Codable, Identifiable, Hashable {
+    let id: UUID
+    let question: String
+    let preference: String
+    let epicResponse: String
+    let ragResponse: String
+    let epicDocs: [RetrievedDoc]
+    let ragDocs: [RetrievedDoc]
+    let epicEval: MetricResult
+    let ragEval: MetricResult
+
+    /// True when this question is the ideal demo case: EPIC follows the
+    /// preference and Plain RAG visibly doesn't.
+    var isStrongContrast: Bool { epicEval.preferenceFollowing && !ragEval.preferenceFollowing }
+
+    enum CodingKeys: String, CodingKey {
+        case question, preference
+        case epicResponse = "epic_response"
+        case ragResponse = "rag_response"
+        case epicDocs = "epic_docs"
+        case ragDocs = "rag_docs"
+        case epicEval = "epic_eval"
+        case ragEval = "rag_eval"
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = UUID()
+        question = try c.decode(String.self, forKey: .question)
+        preference = try c.decode(String.self, forKey: .preference)
+        epicResponse = try c.decode(String.self, forKey: .epicResponse)
+        ragResponse = try c.decode(String.self, forKey: .ragResponse)
+        epicDocs = try c.decode([RetrievedDoc].self, forKey: .epicDocs)
+        ragDocs = try c.decode([RetrievedDoc].self, forKey: .ragDocs)
+        epicEval = try c.decode(MetricResult.self, forKey: .epicEval)
+        ragEval = try c.decode(MetricResult.self, forKey: .ragEval)
+    }
+}
+
 // ── Events from /generate ────────────────────────────────────────────────
 
 nonisolated struct GenerateProgressEvent: Codable {
@@ -351,6 +392,40 @@ final class GenerationRuntime {
             epicIndexBytes: json["epic_index_bytes"] as? Int ?? 0,
             ragIndexBytes: json["rag_index_bytes"] as? Int ?? 0
         )
+    }
+
+    // ── Curated (pre-computed) questions ────────────────────────────────
+
+    func loadCuratedQuestions(personaIndex: Int) async throws -> [CuratedQA] {
+        let url = baseURL.appendingPathComponent("curated_questions")
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.timeoutInterval = 15
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONSerialization.data(withJSONObject: ["persona_index": personaIndex])
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let http = response as? HTTPURLResponse else {
+            throw GenerationRuntimeError.failed("Invalid HTTP response.")
+        }
+        if http.statusCode == 404 {
+            // Not curated yet — not a hard error, just an empty list.
+            return []
+        }
+        guard (200..<300).contains(http.statusCode) else {
+            let msg = (try? JSONSerialization.jsonObject(with: data) as? [String: Any])?["error"] as? String ?? "HTTP \(http.statusCode)"
+            throw GenerationRuntimeError.failed(msg)
+        }
+
+        struct Payload: Codable {
+            let personaIndex: Int
+            let questions: [CuratedQA]
+            enum CodingKeys: String, CodingKey {
+                case personaIndex = "persona_index"
+                case questions
+            }
+        }
+        return try JSONDecoder().decode(Payload.self, from: data).questions
     }
 
     // ── Health check ─────────────────────────────────────────────────────

@@ -700,6 +700,12 @@ final class EPICDemoViewModel: ObservableObject {
     @Published var personaLoadError: String?
     @Published var personaLoaded = false   // true once /load_persona succeeds
 
+    // ── Curated (pre-computed) questions ────────────────────────────────
+    @Published var curatedQuestions: [CuratedQA] = []
+    @Published var isLoadingCuratedQuestions = false
+    @Published var curatedQuestionsError: String?
+    @Published var selectedCuratedQA: CuratedQA?
+
     func loadPersonaIndex() {
         Task { await performLoadPersona() }
     }
@@ -708,6 +714,8 @@ final class EPICDemoViewModel: ObservableObject {
         isLoadingPersona = true
         personaLoadError = nil
         personaLoaded = false
+        curatedQuestions = []
+        selectedCuratedQA = nil
         defer { isLoadingPersona = false }
         do {
             let result = try await generationRuntime.loadPersona(index: persona.personaIndex)
@@ -716,9 +724,38 @@ final class EPICDemoViewModel: ObservableObject {
             epicEntryCount = result.epicEntries
             ragChunkCount = result.ragChunks
             personaLoaded = true
+            await performLoadCuratedQuestions()
         } catch {
             personaLoadError = error.localizedDescription
         }
+    }
+
+    private func performLoadCuratedQuestions() async {
+        isLoadingCuratedQuestions = true
+        curatedQuestionsError = nil
+        defer { isLoadingCuratedQuestions = false }
+        do {
+            curatedQuestions = try await generationRuntime.loadCuratedQuestions(personaIndex: persona.personaIndex)
+        } catch {
+            curatedQuestionsError = error.localizedDescription
+        }
+    }
+
+    /// Instantly show a pre-computed Q&A — no network call, no waiting.
+    /// Populates the same state the live /generate + /evaluate flow would,
+    /// so the existing Generation/Evaluation screens render it unchanged.
+    func selectCuratedQA(_ qa: CuratedQA) {
+        selectedCuratedQA = qa
+        generationQuestion = qa.question
+        epicResponseText = qa.epicResponse
+        ragResponseText = qa.ragResponse
+        epicRetrievedDocs = qa.epicDocs
+        ragRetrievedDocs = qa.ragDocs
+        topPreference = qa.preference
+        generationComplete = true
+        generationError = nil
+        evaluationResult = EvaluationResult(epic: qa.epicEval, rag: qa.ragEval)
+        evaluationError = nil
     }
 
     /// Clears all Retrieval-Demo state (loaded persona index, retrieval
@@ -729,6 +766,11 @@ final class EPICDemoViewModel: ObservableObject {
         personaLoaded = false
         personaLoadError = nil
         isLoadingPersona = false
+
+        curatedQuestions = []
+        isLoadingCuratedQuestions = false
+        curatedQuestionsError = nil
+        selectedCuratedQA = nil
 
         retrievalQuestion = ""
         retrievalStep = .idle
