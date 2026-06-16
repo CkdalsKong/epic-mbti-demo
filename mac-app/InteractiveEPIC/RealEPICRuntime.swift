@@ -14,7 +14,7 @@ enum RealEPICRuntimeError: LocalizedError {
         case .missingPython:
             "Local Python runtime was not found."
         case .preloadedRuntimeUnavailable:
-            "Can't reach the EPIC demo server at http://127.0.0.1:8765. " +
+            "Can't reach the EPIC demo server at http://127.0.0.1:8766. " +
             "Make sure the SSH tunnel to the GPU server is open and " +
             "epic_demo_server.py is running there (see server/README.md)."
         case .failed(let message):
@@ -205,7 +205,7 @@ final class RealEPICRuntime {
     private let pythonPath = "/Users/jam/miniconda3/envs/epic/bin/python3.11"
     private let llmModel = "Qwen/Qwen3-8B"
     private let llmServerURLString = "http://127.0.0.1:8008"
-    private let preloadedRuntimeURL = URL(string: "http://127.0.0.1:8765")!
+    private let preloadedRuntimeURL = URL(string: "http://127.0.0.1:8766")!
 
     func run(chunks: [DocumentChunk], persona: PersonaPreset, threshold: Double) async throws -> RealEPICResult {
         let helperURL = helperScriptURL()

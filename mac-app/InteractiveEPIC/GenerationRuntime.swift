@@ -109,7 +109,7 @@ enum GenerationRuntimeError: LocalizedError {
 
     var errorDescription: String? {
         switch self {
-        case .serverUnavailable: "EPIC Demo Server is not running at localhost:8765."
+        case .serverUnavailable: "EPIC Demo Server is not running at localhost:8766."
         case .noSession: "No indexed session. Run EPIC indexing first."
         case .failed(let m): m
         }
@@ -119,7 +119,7 @@ enum GenerationRuntimeError: LocalizedError {
 // ── GenerationRuntime ─────────────────────────────────────────────────────
 
 final class GenerationRuntime {
-    private let baseURL = URL(string: "http://127.0.0.1:8765")!
+    private let baseURL = URL(string: "http://127.0.0.1:8766")!
 
     // ── Generate (streaming) ──────────────────────────────────────────────
 
