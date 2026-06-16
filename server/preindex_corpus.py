@@ -225,12 +225,17 @@ def fine_filter_chunk(
         return None
 
     decision, reason, preferences = parse_decision_and_reason_preferences(reply)
-    preferences = [map_preference_numbers_to_text(p, shuffled) for p in preferences]
+    # NOTE: matches EPIC_utils.process_chunk_rand_prefs exactly — numbers are
+    # mapped back using the ORIGINAL (unshuffled) relevant_prefs list, even
+    # though the prompt numbered the SHUFFLED list. This looks like a quirk
+    # in the original pipeline, but we replicate it as-is for fidelity.
+    preferences = [map_preference_numbers_to_text(p, relevant_prefs) for p in preferences]
 
-    if decision.strip().lower() != "keep":
+    # Exact, case-sensitive match — same as `item["decision"] == "Keep"` in
+    # EPIC_indexing.py. Anything else (including lowercase "keep") is treated
+    # as not-kept, same as the original.
+    if decision != "Keep":
         return None
-    if not preferences:
-        preferences = shuffled[:1]  # fallback: keep at least the top coarse match
     return {"reason": reason, "relevant_preferences": preferences}
 
 
@@ -375,7 +380,7 @@ def main() -> int:
         # ── Step 1: coarse cosine filter — track EVERY matching preference ──
         print(f"  Coarse filter (threshold={args.coarse_threshold})...", flush=True)
         sim = chunk_vectors @ pref_vectors.T            # (N, P), already L2-normalized
-        above = sim >= args.coarse_threshold            # (N, P) boolean
+        above = sim > args.coarse_threshold             # (N, P) boolean — strict >, matches EPIC_indexing.py
         coarse_mask = above.any(axis=1)
         coarse_indices = np.where(coarse_mask)[0]
         print(f"  Coarse kept: {len(coarse_indices)}/{len(chunks)}", flush=True)
