@@ -3546,12 +3546,12 @@ private struct LatencyBreakdownBar: View {
             Text("Latency Breakdown")
                 .font(.subheadline.weight(.bold))
 
-            row(label: "EPIC-RAG", color: .teal, embed: embedMs, search: epicSearchMs)
-            row(label: "Plain RAG", color: .orange, embed: embedMs, search: ragSearchMs)
+            row(label: "EPIC-RAG", color: .teal, embed: embedMs, search: epicSearchMs, searchName: "query steering")
+            row(label: "Plain RAG", color: .orange, embed: embedMs, search: ragSearchMs, searchName: "chunk search")
 
             HStack(spacing: 14) {
                 legendDot(color: .gray, label: "Query embedding (Contriever, shared)")
-                legendDot(color: .teal.opacity(0.55), label: "EPIC instruction index search")
+                legendDot(color: .teal.opacity(0.55), label: "EPIC query steering (instruction search)")
                 legendDot(color: .orange.opacity(0.55), label: "RAG chunk index search")
             }
             .font(.caption2)
@@ -3562,31 +3562,37 @@ private struct LatencyBreakdownBar: View {
         .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
     }
 
-    private func row(label: String, color: Color, embed: Double, search: Double) -> some View {
+    private func row(label: String, color: Color, embed: Double, search: Double, searchName: String) -> some View {
         let total = embed + search
-        return HStack(spacing: 10) {
-            Text(label)
-                .font(.caption.weight(.bold))
-                .foregroundStyle(color)
-                .frame(width: 76, alignment: .leading)
+        return VStack(alignment: .leading, spacing: 3) {
+            HStack(spacing: 10) {
+                Text(label)
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(color)
+                    .frame(width: 76, alignment: .leading)
 
-            GeometryReader { geo in
-                HStack(spacing: 1) {
-                    Rectangle()
-                        .fill(Color.gray.opacity(0.5))
-                        .frame(width: geo.size.width * (embed / maxTotal))
-                    Rectangle()
-                        .fill(color.opacity(0.55))
-                        .frame(width: geo.size.width * (search / maxTotal))
-                    Spacer(minLength: 0)
+                GeometryReader { geo in
+                    HStack(spacing: 1) {
+                        Rectangle()
+                            .fill(Color.gray.opacity(0.5))
+                            .frame(width: geo.size.width * (embed / maxTotal))
+                        Rectangle()
+                            .fill(color.opacity(0.55))
+                            .frame(width: geo.size.width * (search / maxTotal))
+                        Spacer(minLength: 0)
+                    }
+                    .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
                 }
-                .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
-            }
-            .frame(height: 16)
+                .frame(height: 16)
 
-            Text(String(format: "%.1f ms", total))
-                .font(.caption.monospacedDigit().weight(.semibold))
-                .frame(width: 60, alignment: .trailing)
+                Text(String(format: "%.1f ms", total))
+                    .font(.caption.monospacedDigit().weight(.semibold))
+                    .frame(width: 60, alignment: .trailing)
+            }
+            Text(String(format: "↳ %@: %.1f ms", searchName, search))
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(color)
+                .padding(.leading, 86)
         }
     }
 
