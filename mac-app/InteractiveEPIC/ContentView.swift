@@ -334,8 +334,14 @@ struct ContentView: View {
                 RetrievalStepTracker(currentStep: demo.retrievalStep)
             }
 
-            // Results: latency + doc comparison
+            // Results: latency breakdown + doc comparison
             if demo.retrievalStep == .done, let result = demo.retrievalResult {
+                LatencyBreakdownBar(
+                    embedMs: result.embedMs,
+                    epicSearchMs: result.epicSearchMs,
+                    ragSearchMs: result.ragSearchMs
+                )
+
                 HStack(alignment: .top, spacing: 16) {
                     RetrievalResultPanel(
                         title: "EPIC-RAG",
@@ -3523,6 +3529,74 @@ private struct MemoryComparisonCard: View {
 }
 
 // ── Animated retrieval step tracker ─────────────────────────────────────
+
+// ── Latency breakdown: shared embedding step + per-system search ───────────
+
+private struct LatencyBreakdownBar: View {
+    let embedMs: Double
+    let epicSearchMs: Double
+    let ragSearchMs: Double
+
+    private var epicTotal: Double { embedMs + epicSearchMs }
+    private var ragTotal: Double { embedMs + ragSearchMs }
+    private var maxTotal: Double { max(epicTotal, ragTotal, 0.001) }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Latency Breakdown")
+                .font(.subheadline.weight(.bold))
+
+            row(label: "EPIC-RAG", color: .teal, embed: embedMs, search: epicSearchMs)
+            row(label: "Plain RAG", color: .orange, embed: embedMs, search: ragSearchMs)
+
+            HStack(spacing: 14) {
+                legendDot(color: .gray, label: "Query embedding (Contriever, shared)")
+                legendDot(color: .teal.opacity(0.55), label: "EPIC instruction index search")
+                legendDot(color: .orange.opacity(0.55), label: "RAG chunk index search")
+            }
+            .font(.caption2)
+            .foregroundStyle(.secondary)
+        }
+        .padding(16)
+        .background(Color(nsColor: .controlBackgroundColor).opacity(0.6))
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+    }
+
+    private func row(label: String, color: Color, embed: Double, search: Double) -> some View {
+        let total = embed + search
+        return HStack(spacing: 10) {
+            Text(label)
+                .font(.caption.weight(.bold))
+                .foregroundStyle(color)
+                .frame(width: 76, alignment: .leading)
+
+            GeometryReader { geo in
+                HStack(spacing: 1) {
+                    Rectangle()
+                        .fill(Color.gray.opacity(0.5))
+                        .frame(width: geo.size.width * (embed / maxTotal))
+                    Rectangle()
+                        .fill(color.opacity(0.55))
+                        .frame(width: geo.size.width * (search / maxTotal))
+                    Spacer(minLength: 0)
+                }
+                .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
+            }
+            .frame(height: 16)
+
+            Text(String(format: "%.1f ms", total))
+                .font(.caption.monospacedDigit().weight(.semibold))
+                .frame(width: 60, alignment: .trailing)
+        }
+    }
+
+    private func legendDot(color: Color, label: String) -> some View {
+        HStack(spacing: 4) {
+            Circle().fill(color).frame(width: 8, height: 8)
+            Text(label)
+        }
+    }
+}
 
 private struct RetrievalStepTracker: View {
     let currentStep: EPICDemoViewModel.RetrievalStep

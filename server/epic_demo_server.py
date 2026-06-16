@@ -414,10 +414,10 @@ def evaluate_single(state: EPICDemoState, question: str, preference: str, respon
 
 # ── Retrieval ─────────────────────────────────────────────────────────────
 
-def epic_retrieve(state: EPICDemoState, session: DemoSession, question: str, top_k: int = 5) -> list[dict]:
+def epic_search(session: DemoSession, q_vec: np.ndarray, top_k: int = 5) -> list[dict]:
+    """Search the EPIC instruction index given an already-computed query vector."""
     if session.epic_index is None or session.epic_index.ntotal == 0:
         return []
-    q_vec = state.encoder.encode([question])
     scores, indices = session.epic_index.search(q_vec, min(top_k, session.epic_index.ntotal))
     results = []
     for score, idx in zip(scores[0], indices[0]):
@@ -429,10 +429,10 @@ def epic_retrieve(state: EPICDemoState, session: DemoSession, question: str, top
     return results
 
 
-def rag_retrieve(state: EPICDemoState, session: DemoSession, question: str, top_k: int = 5) -> list[dict]:
+def rag_search(session: DemoSession, q_vec: np.ndarray, top_k: int = 5) -> list[dict]:
+    """Search the RAG chunk index given an already-computed query vector."""
     if session.rag_index is None or session.rag_index.ntotal == 0:
         return []
-    q_vec = state.encoder.encode([question])
     scores, indices = session.rag_index.search(q_vec, min(top_k, session.rag_index.ntotal))
     results = []
     for score, idx in zip(scores[0], indices[0]):
@@ -442,6 +442,16 @@ def rag_retrieve(state: EPICDemoState, session: DemoSession, question: str, top_
         chunk["score"] = float(score)
         results.append(chunk)
     return results
+
+
+def epic_retrieve(state: EPICDemoState, session: DemoSession, question: str, top_k: int = 5) -> list[dict]:
+    q_vec = state.encoder.encode([question])
+    return epic_search(session, q_vec, top_k)
+
+
+def rag_retrieve(state: EPICDemoState, session: DemoSession, question: str, top_k: int = 5) -> list[dict]:
+    q_vec = state.encoder.encode([question])
+    return rag_search(session, q_vec, top_k)
 
 
 def build_epic_context(docs: list[dict]) -> str:
@@ -788,19 +798,31 @@ class EPICDemoHandler(BaseHTTPRequestHandler):
             self.write_json({"error": "Missing 'question'"}, 400)
             return
 
+        # Step 1: query embedding — shared by both systems (one Contriever forward pass)
         t0 = time.time()
-        epic_docs = epic_retrieve(state, session, question, top_k)
-        epic_embed_ms = (time.time() - t0) * 1000  # includes query embedding + search
+        q_vec = state.encoder.encode([question])
+        embed_ms = (time.time() - t0) * 1000
 
+        # Step 2a: EPIC — search the (small) preference-steered instruction index
         t0 = time.time()
-        rag_docs = rag_retrieve(state, session, question, top_k)
-        rag_embed_ms = (time.time() - t0) * 1000
+        epic_docs = epic_search(session, q_vec, top_k)
+        epic_search_ms = (time.time() - t0) * 1000
+
+        # Step 2b: RAG — search the (large) raw chunk index
+        t0 = time.time()
+        rag_docs = rag_search(session, q_vec, top_k)
+        rag_search_ms = (time.time() - t0) * 1000
 
         self.write_json({
             "epic_docs": epic_docs,
             "rag_docs": rag_docs,
-            "epic_retr_ms": round(epic_embed_ms, 1),
-            "rag_retr_ms": round(rag_embed_ms, 1),
+            # Breakdown: embedding is shared, search is per-system
+            "embed_ms": round(embed_ms, 1),
+            "epic_search_ms": round(epic_search_ms, 1),
+            "rag_search_ms": round(rag_search_ms, 1),
+            # Totals (embed + search) — kept for backward compatibility
+            "epic_retr_ms": round(embed_ms + epic_search_ms, 1),
+            "rag_retr_ms": round(embed_ms + rag_search_ms, 1),
             "epic_index_bytes": session.epic_index_bytes,
             "rag_index_bytes": session.rag_index_bytes,
             "epic_entries": len(session.epic_entries),

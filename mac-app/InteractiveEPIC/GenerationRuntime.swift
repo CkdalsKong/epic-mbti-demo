@@ -242,8 +242,11 @@ final class GenerationRuntime {
     struct RetrieveOnlyResult {
         let epicDocs: [RetrievedDoc]
         let ragDocs: [RetrievedDoc]
-        let epicRetrMs: Double
-        let ragRetrMs: Double
+        let embedMs: Double          // shared query-embedding step
+        let epicSearchMs: Double     // EPIC instruction index search
+        let ragSearchMs: Double      // RAG chunk index search
+        let epicRetrMs: Double       // embed + epicSearch (total)
+        let ragRetrMs: Double        // embed + ragSearch (total)
         let epicIndexBytes: Int
         let ragIndexBytes: Int
         let epicEntries: Int
@@ -273,6 +276,9 @@ final class GenerationRuntime {
         struct Payload: Codable {
             let epicDocs: [RetrievedDoc]
             let ragDocs: [RetrievedDoc]
+            let embedMs: Double
+            let epicSearchMs: Double
+            let ragSearchMs: Double
             let epicRetrMs: Double
             let ragRetrMs: Double
             let epicIndexBytes: Int
@@ -282,6 +288,8 @@ final class GenerationRuntime {
 
             enum CodingKeys: String, CodingKey {
                 case epicDocs = "epic_docs", ragDocs = "rag_docs"
+                case embedMs = "embed_ms"
+                case epicSearchMs = "epic_search_ms", ragSearchMs = "rag_search_ms"
                 case epicRetrMs = "epic_retr_ms", ragRetrMs = "rag_retr_ms"
                 case epicIndexBytes = "epic_index_bytes", ragIndexBytes = "rag_index_bytes"
                 case epicEntries = "epic_entries", ragChunks = "rag_chunks"
@@ -290,6 +298,7 @@ final class GenerationRuntime {
         let p = try JSONDecoder().decode(Payload.self, from: data)
         return RetrieveOnlyResult(
             epicDocs: p.epicDocs, ragDocs: p.ragDocs,
+            embedMs: p.embedMs, epicSearchMs: p.epicSearchMs, ragSearchMs: p.ragSearchMs,
             epicRetrMs: p.epicRetrMs, ragRetrMs: p.ragRetrMs,
             epicIndexBytes: p.epicIndexBytes, ragIndexBytes: p.ragIndexBytes,
             epicEntries: p.epicEntries, ragChunks: p.ragChunks
