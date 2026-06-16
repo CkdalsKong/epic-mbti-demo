@@ -4,15 +4,20 @@ Pre-compute and curate a fixed set of "known-good" demo questions per persona.
 
 For each persona, this script:
   1. Loads the persona's pre-built EPIC + RAG index (preindex_corpus.py output).
-  2. Takes candidate questions from PrefWiki's preference_blocks[*].queries.
-  3. For each candidate: retrieves (EPIC + RAG), generates both responses,
+  2. Builds the FULL candidate pool from PrefWiki's preference_blocks[*].queries
+     (every query, round-robin across blocks — not just the first one).
+  3. Evaluates candidates in batches of --candidates-per-persona, topping up
+     with more from the pool until --keep candidates pass (EPIC must have
+     preference_following=True) or the pool is exhausted. A persona is never
+     silently left with fewer curated questions than requested without a
+     WARNING printed — check the output for personas that came up short.
+  4. For each candidate: retrieves (EPIC + RAG), generates both responses,
      and runs the same 4-metric evaluation as the live demo
      (acknow / violate / hallucinate / helpful / preference_following).
-  4. Ranks candidates by how clearly EPIC wins over Plain RAG, and keeps the
-     top N per persona.
-  5. Saves the full precomputed result (question, both responses, both doc
-     lists, both eval results, retrieval latency) to
-     preindex/persona_N/curated_qa.json.
+  5. Ranks evaluated candidates by how clearly EPIC wins over Plain RAG, and
+     keeps the top --keep per persona.
+  6. Saves the full precomputed result (question, both responses, both doc
+     lists, both eval results) to preindex/persona_N/curated_qa.json.
 
 The demo app then loads these via GET /curated_questions — instant, no LLM
 calls during the live demo, and every question shown is one we've already
@@ -78,16 +83,20 @@ def parse_persona_range(spec: str, total: int) -> list[int]:
     return sorted(i for i in indices if 0 <= i < total)
 
 
-def candidate_questions(persona_data: dict, max_candidates: int) -> list[dict]:
-    """One question per preference block (its first query), up to max_candidates."""
+def all_candidate_questions(persona_data: dict) -> list[dict]:
+    """Every (question, preference) pair across all blocks, round-robin
+    ordered (1st query of every block, then 2nd query of every block, ...)
+    so a capped slice still covers all preferences before repeating one."""
+    blocks = [b for b in persona_data["preference_blocks"] if b.get("queries")]
+    if not blocks:
+        return []
+    max_queries = max(len(b["queries"]) for b in blocks)
     out = []
-    for block in persona_data["preference_blocks"]:
-        queries = block.get("queries", [])
-        if not queries:
-            continue
-        out.append({"question": queries[0]["question"], "preference": block["preference"]})
-        if len(out) >= max_candidates:
-            break
+    for qi in range(max_queries):
+        for block in blocks:
+            queries = block["queries"]
+            if qi < len(queries):
+                out.append({"question": queries[qi]["question"], "preference": block["preference"]})
     return out
 
 
@@ -156,7 +165,9 @@ def main() -> int:
     parser.add_argument("--llm-timeout", type=int, default=120)
     parser.add_argument("--personas", default="0-56")
     parser.add_argument("--candidates-per-persona", type=int, default=8,
-                        help="How many candidate questions to try per persona before curating")
+                        help="Batch size: evaluate this many candidates at a time, topping up "
+                             "with more (across ALL of the persona's preference-block queries, "
+                             "round-robin) until --keep good ones are found or candidates run out")
     parser.add_argument("--keep", type=int, default=3, help="How many curated questions to keep per persona")
     parser.add_argument("--workers", type=int, default=8, help="Parallel candidates evaluated at once")
     parser.add_argument("--resume", action="store_true", help="Skip personas that already have curated_qa.json")
@@ -196,28 +207,50 @@ def main() -> int:
             print(f"  [{pi}] Failed to load session: {e}", flush=True)
             continue
 
-        candidates = candidate_questions(personas[pi], args.candidates_per_persona)
-        print(f"  {len(candidates)} candidate questions", flush=True)
+        all_candidates = all_candidate_questions(personas[pi])
+        if not all_candidates:
+            print(f"  [{pi}] WARNING: persona has no preference_blocks with queries — skipping", flush=True)
+            continue
 
-        results = []
+        # Evaluate in batches, topping up with more candidates until we
+        # have `--keep` good ones (EPIC preference_following=True) or we
+        # run out of available questions for this persona.
+        results: list[dict] = []
+        used = 0
+        batch_size = args.candidates_per_persona
         t0 = time.time()
-        with tqdm(total=len(candidates), desc=f"  p{pi} evaluating", unit="q") as pbar:
-            with ThreadPoolExecutor(max_workers=args.workers) as ex:
-                futures = {ex.submit(evaluate_candidate, state, session, c): c for c in candidates}
-                for fut in as_completed(futures):
-                    try:
-                        results.append(fut.result())
-                    except Exception as e:
-                        print(f"\n  [{pi}] candidate failed: {e}", flush=True)
-                    pbar.update(1)
-        print(f"  Evaluated {len(results)} candidates in {time.time()-t0:.1f}s", flush=True)
+        while used < len(all_candidates):
+            batch = all_candidates[used: used + batch_size]
+            used += len(batch)
+            print(f"  Evaluating candidates {used - len(batch) + 1}-{used} of {len(all_candidates)}...", flush=True)
+            with tqdm(total=len(batch), desc=f"  p{pi} evaluating", unit="q") as pbar:
+                with ThreadPoolExecutor(max_workers=args.workers) as ex:
+                    futures = {ex.submit(evaluate_candidate, state, session, c): c for c in batch}
+                    for fut in as_completed(futures):
+                        try:
+                            results.append(fut.result())
+                        except Exception as e:
+                            print(f"\n  [{pi}] candidate failed: {e}", flush=True)
+                        pbar.update(1)
+
+            good_so_far = sum(1 for r in results if score_candidate(r) > -100)
+            if good_so_far >= args.keep:
+                break
+            if used < len(all_candidates):
+                print(f"  Only {good_so_far}/{args.keep} good candidates so far — "
+                      f"topping up with more questions...", flush=True)
+
+        print(f"  Evaluated {len(results)} candidates total in {time.time()-t0:.1f}s "
+              f"({used}/{len(all_candidates)} available questions used)", flush=True)
 
         scored = sorted(results, key=score_candidate, reverse=True)
         curated = [r for r in scored if score_candidate(r) > -100][: args.keep]
 
-        if not curated:
-            print(f"  [{pi}] WARNING: no candidate had EPIC preference_following=True — "
-                  f"saving empty curated_qa.json. Consider raising --candidates-per-persona.", flush=True)
+        if len(curated) < args.keep:
+            print(f"  [{pi}] WARNING: only found {len(curated)}/{args.keep} good candidates "
+                  f"after exhausting all {len(all_candidates)} available questions for this "
+                  f"persona. This persona may need more PrefWiki queries, a lower bar in "
+                  f"score_candidate(), or manual review.", flush=True)
 
         win_count = sum(1 for r in curated if not r["rag_eval"]["preference_following"])
         print(f"  Kept {len(curated)}/{len(results)} ({win_count} where RAG fails and EPIC succeeds)", flush=True)
