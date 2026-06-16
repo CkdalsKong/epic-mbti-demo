@@ -25,7 +25,7 @@ private enum DemoStage: Int, CaseIterable {
     static func flow(for mode: DemoMode?) -> [DemoStage] {
         switch mode {
         case nil: [.modeSelect]
-        case .indexing: [.preferences, .wikipedia, .chunking, .comparison]
+        case .indexing: [.preferences, .wikipedia, .chunking, .comparison, .results]
         case .retrieval: [.personaSelect, .retrieval, .generation, .evaluation]
         }
     }
@@ -635,12 +635,25 @@ struct ContentView: View {
                 .disabled(demo.isRunningEPIC)
 
                 Button {
-                    Task { await demo.runEPICAndWait() }
+                    Task {
+                        await demo.runEPICAndWait()
+                        if demo.runtimeFootprint != nil {
+                            try? await Task.sleep(nanoseconds: 1_200_000_000)
+                            stage = .results
+                        }
+                    }
                 } label: {
                     Label(demo.runtimeFootprint == nil ? "Start EPIC" : "Run Again", systemImage: "bolt.fill")
                 }
                 .buttonStyle(.borderedProminent)
                 .disabled(demo.isRunningEPIC || demo.chunks.isEmpty)
+
+                Button {
+                    stage = .results
+                } label: {
+                    Label("Results", systemImage: "chart.bar.xaxis")
+                }
+                .disabled(demo.runtimeFootprint == nil)
             }
 
             RuntimeSettingsBar(footprint: demo.runtimeFootprint, threshold: demo.coarseThreshold)
