@@ -721,6 +721,43 @@ final class EPICDemoViewModel: ObservableObject {
         }
     }
 
+    /// Clears all Retrieval-Demo state (loaded persona index, retrieval
+    /// results, generation/eval results). Call when leaving the Retrieval
+    /// Demo flow (e.g. navigating back to the mode-select / Home screen) so
+    /// stale state doesn't carry over into the next session.
+    func resetRetrievalDemo() {
+        personaLoaded = false
+        personaLoadError = nil
+        isLoadingPersona = false
+
+        retrievalQuestion = ""
+        retrievalStep = .idle
+        isRetrieving = false
+        retrievalError = nil
+        retrievalResult = nil
+
+        epicRetrLatencyMs = nil
+        ragRetrLatencyMs = nil
+        epicIndexBytes = nil
+        ragIndexBytes = nil
+        epicEntryCount = nil
+        ragChunkCount = nil
+        epicRetrievedDocs = []
+        ragRetrievedDocs = []
+
+        generationQuestion = ""
+        epicResponseText = ""
+        ragResponseText = ""
+        topPreference = ""
+        isGenerating = false
+        generationError = nil
+        generationComplete = false
+
+        evaluationResult = nil
+        isEvaluating = false
+        evaluationError = nil
+    }
+
     // ── Retrieval-only demo (detailed breakdown, no generation) ────────────
 
     enum RetrievalStep: Int, CaseIterable {

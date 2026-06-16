@@ -140,6 +140,9 @@ struct ContentView: View {
                     if mode != nil {
                         Button {
                             withAnimation {
+                                if mode == .retrieval {
+                                    demo.resetRetrievalDemo()
+                                }
                                 mode = nil
                                 stage = .modeSelect
                             }
@@ -3735,12 +3738,12 @@ private struct RetrievalResultPanel: View {
                                     Text(instruction)
                                         .font(.caption2.weight(.medium))
                                         .foregroundStyle(.teal)
-                                        .lineLimit(2)
+                                        .lineLimit(3)
                                 }
                                 Text(doc.chunkText)
                                     .font(.caption2)
                                     .foregroundStyle(.secondary)
-                                    .lineLimit(2)
+                                    .fixedSize(horizontal: false, vertical: true)
                             }
                             .padding(10)
                             .background(color.opacity(0.05))
