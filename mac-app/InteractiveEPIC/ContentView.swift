@@ -260,16 +260,12 @@ struct ContentView: View {
                 }
 
                 if demo.personaLoaded {
-                    HStack(spacing: 10) {
-                        StatBadge(symbol: "bolt.horizontal.circle.fill", label: "EPIC \(demo.epicEntryCount ?? 0) entries", color: .teal)
-                        StatBadge(symbol: "tray.full", label: "RAG \(demo.ragChunkCount ?? 0) chunks", color: .orange)
-                        if let bytes = demo.epicIndexBytes {
-                            StatBadge(symbol: "memorychip", label: String(format: "EPIC %.1f MB", Double(bytes)/1_048_576), color: .teal)
-                        }
-                        if let bytes = demo.ragIndexBytes {
-                            StatBadge(symbol: "memorychip", label: String(format: "RAG %.1f MB", Double(bytes)/1_048_576), color: .orange)
-                        }
-                    }
+                    MemoryReductionComparison(
+                        epicEntryCount: demo.epicEntryCount ?? 0,
+                        epicBytes: demo.epicIndexBytes ?? 0,
+                        ragChunkCount: demo.ragChunkCount ?? 0,
+                        ragBytes: demo.ragIndexBytes ?? 0
+                    )
                 }
             }
             .padding(18)
@@ -305,24 +301,12 @@ struct ContentView: View {
             }
 
             // Memory footprint comparison
-            HStack(spacing: 16) {
-                MemoryComparisonCard(
-                    title: "EPIC Memory",
-                    color: .teal,
-                    symbol: "bolt.horizontal.circle.fill",
-                    entryLabel: "instructions",
-                    entryCount: demo.epicEntryCount ?? 0,
-                    bytes: demo.epicIndexBytes ?? 0
-                )
-                MemoryComparisonCard(
-                    title: "Plain RAG Memory",
-                    color: .orange,
-                    symbol: "tray.full",
-                    entryLabel: "raw chunks",
-                    entryCount: demo.ragChunkCount ?? 0,
-                    bytes: demo.ragIndexBytes ?? 0
-                )
-            }
+            MemoryReductionComparison(
+                epicEntryCount: demo.epicEntryCount ?? 0,
+                epicBytes: demo.epicIndexBytes ?? 0,
+                ragChunkCount: demo.ragChunkCount ?? 0,
+                ragBytes: demo.ragIndexBytes ?? 0
+            )
 
             // Query input
             HStack(spacing: 10) {
@@ -3437,6 +3421,56 @@ private struct ModeCard: View {
 }
 
 // ── Memory comparison card (Retrieval screen) ──────────────────────────────
+
+// ── Side-by-side memory comparison with reduction factor ───────────────────
+
+private struct MemoryReductionComparison: View {
+    let epicEntryCount: Int
+    let epicBytes: Int
+    let ragChunkCount: Int
+    let ragBytes: Int
+
+    private var epicMb: Double { Double(epicBytes) / 1_048_576 }
+    private var ragMb: Double { Double(ragBytes) / 1_048_576 }
+    private var reductionFactor: Double { epicMb > 0 ? ragMb / epicMb : 0 }
+
+    var body: some View {
+        VStack(spacing: 10) {
+            HStack(alignment: .top, spacing: 16) {
+                MemoryComparisonCard(
+                    title: "EPIC Memory",
+                    color: .teal,
+                    symbol: "bolt.horizontal.circle.fill",
+                    entryLabel: "instructions",
+                    entryCount: epicEntryCount,
+                    bytes: epicBytes
+                )
+                MemoryComparisonCard(
+                    title: "Plain RAG Memory",
+                    color: .orange,
+                    symbol: "tray.full",
+                    entryLabel: "raw chunks",
+                    entryCount: ragChunkCount,
+                    bytes: ragBytes
+                )
+            }
+
+            if reductionFactor > 1 {
+                HStack(spacing: 6) {
+                    Image(systemName: "arrow.down.right.circle.fill")
+                        .foregroundStyle(.green)
+                    Text(String(format: "EPIC stores %.1f× less than Plain RAG", reductionFactor))
+                        .font(.subheadline.weight(.bold))
+                        .foregroundStyle(.green)
+                }
+                .padding(.horizontal, 14)
+                .padding(.vertical, 8)
+                .background(Color.green.opacity(0.10))
+                .clipShape(Capsule())
+            }
+        }
+    }
+}
 
 private struct MemoryComparisonCard: View {
     let title: String
