@@ -41,9 +41,24 @@ Run once after preindex_corpus.py, on the same machine as the vLLM servers:
     --workers 8
 """
 
+import os
+
+# Must be set BEFORE numpy/torch/transformers get imported (transitively,
+# via epic_demo_server -> epic_runtime). Contriever runs on CPU here, and
+# with --workers threads all calling encoder.encode() concurrently, each
+# spawning its own multi-threaded OpenBLAS call, the OS runs out of mmap
+# regions ("BLAS: Program is Terminated... too many memory regions" ->
+# segfault). Capping each BLAS call to 1 thread fixes it — concurrency
+# still comes from running --workers candidates in parallel, just without
+# nested over-threading inside each one.
+os.environ.setdefault("OPENBLAS_NUM_THREADS", "1")
+os.environ.setdefault("OMP_NUM_THREADS", "1")
+os.environ.setdefault("MKL_NUM_THREADS", "1")
+os.environ.setdefault("VECLIB_MAXIMUM_THREADS", "1")
+os.environ.setdefault("NUMEXPR_NUM_THREADS", "1")
+
 import argparse
 import json
-import os
 import re
 import sys
 import time

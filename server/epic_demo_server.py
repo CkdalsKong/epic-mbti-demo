@@ -8,9 +8,22 @@ Endpoints:
   POST /evaluate   → 4-metric preference following evaluation (JSON)
 """
 
+import os
+
+# Must be set before numpy/torch get imported transitively (epic_runtime).
+# Contriever runs on CPU; concurrent requests (e.g. parallel EPIC/RAG
+# generation, /evaluate's 3-way ThreadPoolExecutor) each calling
+# encoder.encode() with unrestricted OpenBLAS threading can exhaust the
+# OS's mmap regions ("BLAS: Program is Terminated... too many memory
+# regions" -> segfault). Capping each BLAS call to 1 thread fixes it.
+os.environ.setdefault("OPENBLAS_NUM_THREADS", "1")
+os.environ.setdefault("OMP_NUM_THREADS", "1")
+os.environ.setdefault("MKL_NUM_THREADS", "1")
+os.environ.setdefault("VECLIB_MAXIMUM_THREADS", "1")
+os.environ.setdefault("NUMEXPR_NUM_THREADS", "1")
+
 import argparse
 import json
-import os
 import re
 import sys
 import threading
