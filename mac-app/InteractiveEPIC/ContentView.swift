@@ -119,7 +119,9 @@ struct ContentView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        .frame(minWidth: 1180, minHeight: 760)
+        .frame(minWidth: 1320, minHeight: 860)
+        .controlSize(.large)
+        .font(.system(size: 15))
         .background(Color(nsColor: .windowBackgroundColor))
         .sheet(item: $selectedResultChunk) { chunk in
             ResultChunkDetailSheet(
@@ -136,7 +138,7 @@ struct ContentView: View {
             VStack(alignment: .leading, spacing: 3) {
                 HStack(spacing: 8) {
                     Text("Interactive EPIC")
-                        .font(.system(size: 22, weight: .bold, design: .rounded))
+                        .font(.system(size: 26, weight: .bold, design: .rounded))
                     if mode != nil {
                         Button {
                             withAnimation {
@@ -171,17 +173,36 @@ struct ContentView: View {
     // ── Mode select (landing) ────────────────────────────────────────────
 
     private var modeSelectScreen: some View {
-        VStack(spacing: 28) {
+        VStack(spacing: 36) {
             Spacer()
-            VStack(spacing: 8) {
-                Text("Interactive EPIC")
-                    .font(.system(size: 34, weight: .bold, design: .rounded))
-                Text("Choose which part of the pipeline to demo.")
-                    .font(.title3)
+
+            VStack(spacing: 14) {
+                Text("ICML 2026")
+                    .font(.headline.weight(.bold))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 6)
+                    .background(Color.teal)
+                    .clipShape(Capsule())
+
+                Text("From Volume to Value")
+                    .font(.system(size: 52, weight: .bold, design: .rounded))
+                Text("Preference-Aligned Memory Construction for On-Device RAG")
+                    .font(.title)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                Text("Changmin Lee · Jaemin Kim · Taesik Gong")
+                    .font(.title3.weight(.medium))
                     .foregroundStyle(.secondary)
             }
+            .multilineTextAlignment(.center)
+            .frame(maxWidth: 900)
 
-            HStack(spacing: 24) {
+            Text("Choose which part of the pipeline to demo")
+                .font(.title2.weight(.semibold))
+                .foregroundStyle(.secondary)
+
+            HStack(spacing: 28) {
                 ModeCard(
                     symbol: "scissors",
                     title: "Indexing Demo",
@@ -206,7 +227,7 @@ struct ContentView: View {
                     }
                 }
             }
-            .frame(maxWidth: 900)
+            .frame(maxWidth: 1000)
 
             Spacer()
         }
@@ -223,6 +244,10 @@ struct ContentView: View {
                 title: "Select a Persona",
                 subtitle: "Load that persona's pre-indexed EPIC memory over the full corpus."
             )
+
+            GuideBanner(text: demo.personaLoaded
+                ? "Loaded! Click \"Continue to Retrieval\" below to compare EPIC vs Plain RAG."
+                : "Pick a persona below, then click \"Load Persona\" to load its memory.")
 
             PersonaPresetSelector(
                 selectedPersonaIndex: Binding(
@@ -298,6 +323,8 @@ struct ContentView: View {
                 }
                 // Generation/Evaluation are implemented but hidden from this flow for now.
             }
+
+            GuideBanner(text: "Type a question below, then click \"Run Retrieval\" to compare EPIC vs Plain RAG.", color: .orange)
 
             // Memory footprint comparison
             MemoryReductionComparison(
@@ -386,6 +413,8 @@ struct ContentView: View {
                     title: "User Preferences",
                     subtitle: "Choose a PrefWiki persona, then edit preferences."
                 )
+
+                GuideBanner(text: "Pick a persona, review its preferences, then click \"Continue.\"")
 
                 PersonaPresetSelector(
                     selectedPersonaIndex: Binding(
@@ -493,6 +522,8 @@ struct ContentView: View {
                 }
             }
 
+            GuideBanner(text: "Search a topic, then click a result below to extract it.")
+
             HStack(spacing: 10) {
                 TextField("Search Wikipedia", text: $demo.searchText)
                     .textFieldStyle(.roundedBorder)
@@ -572,6 +603,8 @@ struct ContentView: View {
                 .buttonStyle(.borderedProminent)
                 .disabled(demo.chunks.isEmpty)
             }
+
+            GuideBanner(text: "Watch the document get split into chunks, then click \"Start Indexing.\"")
 
             if let article = demo.selectedArticle {
                 HStack(spacing: 12) {
@@ -662,6 +695,10 @@ struct ContentView: View {
                 }
                 .disabled(demo.runtimeFootprint == nil)
             }
+
+            GuideBanner(text: demo.runtimeFootprint == nil
+                ? "Click \"Start EPIC\" to run coarse + fine filtering and build the memory."
+                : "Indexing complete — click \"Results\" to see what got kept and why.")
 
             RuntimeSettingsBar(footprint: demo.runtimeFootprint, threshold: demo.coarseThreshold)
 
@@ -768,18 +805,18 @@ private struct StagePill: View {
     var body: some View {
         HStack(spacing: 8) {
             Image(systemName: stage.symbol)
-                .font(.caption.weight(.bold))
+                .font(.body.weight(.bold))
             VStack(alignment: .leading, spacing: 1) {
                 Text(stage.title)
-                    .font(.caption.weight(.bold))
+                    .font(.body.weight(.bold))
                 Text(stage.subtitle)
-                    .font(.caption2)
+                    .font(.caption)
                     .foregroundStyle(.secondary)
             }
         }
         .foregroundStyle(isCurrent ? .teal : .secondary)
-        .padding(.horizontal, 11)
-        .padding(.vertical, 8)
+        .padding(.horizontal, 13)
+        .padding(.vertical, 9)
         .background(isCurrent ? .teal.opacity(0.12) : Color(nsColor: .controlBackgroundColor))
         .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
         .overlay(
@@ -799,25 +836,48 @@ private struct ScreenTitle: View {
     let subtitle: String
 
     var body: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: 14) {
             Image(systemName: symbol)
-                .font(.title2.weight(.semibold))
+                .font(.system(size: 24, weight: .semibold))
                 .foregroundStyle(.teal)
-                .frame(width: 42, height: 42)
+                .frame(width: 56, height: 56)
                 .background(.teal.opacity(0.12))
                 .clipShape(Circle())
 
-            VStack(alignment: .leading, spacing: 3) {
+            VStack(alignment: .leading, spacing: 4) {
                 Text(title)
-                    .font(.system(size: 28, weight: .bold, design: .rounded))
+                    .font(.system(size: 36, weight: .bold, design: .rounded))
                     .lineLimit(1)
                     .minimumScaleFactor(0.78)
                 Text(subtitle)
-                    .font(.subheadline)
+                    .font(.title3)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
             }
         }
+    }
+}
+
+// ── Guide banner: tells the audience what to do on this screen ─────────────
+
+private struct GuideBanner: View {
+    let text: String
+    var color: Color = .teal
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: "hand.point.right.fill")
+                .font(.title3.weight(.semibold))
+            Text(text)
+                .font(.title3.weight(.semibold))
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .foregroundStyle(color)
+        .padding(.horizontal, 18)
+        .padding(.vertical, 12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(color.opacity(0.10))
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
     }
 }
 
@@ -3406,26 +3466,26 @@ private struct ModeCard: View {
 
     var body: some View {
         Button(action: action) {
-            VStack(alignment: .leading, spacing: 14) {
+            VStack(alignment: .leading, spacing: 18) {
                 Image(systemName: symbol)
-                    .font(.system(size: 30, weight: .semibold))
+                    .font(.system(size: 40, weight: .semibold))
                     .foregroundStyle(color)
-                    .frame(width: 56, height: 56)
+                    .frame(width: 72, height: 72)
                     .background(color.opacity(0.12))
                     .clipShape(Circle())
                 Text(title)
-                    .font(.title2.weight(.bold))
+                    .font(.system(size: 30, weight: .bold, design: .rounded))
                 Text(detail)
-                    .font(.body)
+                    .font(.title3)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
                 Spacer(minLength: 0)
                 Label("Start", systemImage: "arrow.right.circle.fill")
-                    .font(.headline)
+                    .font(.title2.weight(.semibold))
                     .foregroundStyle(color)
             }
-            .padding(22)
-            .frame(maxWidth: .infinity, minHeight: 260, alignment: .topLeading)
+            .padding(28)
+            .frame(maxWidth: .infinity, minHeight: 320, alignment: .topLeading)
             .background(Color(nsColor: .controlBackgroundColor))
             .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
             .overlay(
