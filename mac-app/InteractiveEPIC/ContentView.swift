@@ -338,6 +338,8 @@ struct ContentView: View {
             if demo.retrievalStep == .done, let result = demo.retrievalResult {
                 LatencyBreakdownBar(
                     embedMs: result.embedMs,
+                    steerMs: result.steerMs,
+                    matchedPreference: result.matchedPreference,
                     epicSearchMs: result.epicSearchMs,
                     ragSearchMs: result.ragSearchMs
                 )
@@ -3534,10 +3536,12 @@ private struct MemoryComparisonCard: View {
 
 private struct LatencyBreakdownBar: View {
     let embedMs: Double
+    let steerMs: Double          // EPIC-only: fold top-1 preference into the query vector
+    let matchedPreference: String?
     let epicSearchMs: Double
     let ragSearchMs: Double
 
-    private var epicTotal: Double { embedMs + epicSearchMs }
+    private var epicTotal: Double { embedMs + steerMs + epicSearchMs }
     private var ragTotal: Double { embedMs + ragSearchMs }
     private var maxTotal: Double { max(epicTotal, ragTotal, 0.001) }
 
@@ -3546,13 +3550,14 @@ private struct LatencyBreakdownBar: View {
             Text("Latency Breakdown")
                 .font(.subheadline.weight(.bold))
 
-            row(label: "EPIC-RAG", color: .teal, embed: embedMs, search: epicSearchMs, searchName: "query steering")
-            row(label: "Plain RAG", color: .orange, embed: embedMs, search: ragSearchMs, searchName: "chunk search")
+            epicRow
+            ragRow
 
             HStack(spacing: 14) {
                 legendDot(color: .gray, label: "Query embedding (Contriever, shared)")
-                legendDot(color: .teal.opacity(0.55), label: "EPIC query steering (instruction search)")
-                legendDot(color: .orange.opacity(0.55), label: "RAG chunk index search")
+                legendDot(color: .purple.opacity(0.55), label: "EPIC query steering (fold top-1 preference)")
+                legendDot(color: .teal.opacity(0.55), label: "EPIC instruction search")
+                legendDot(color: .orange.opacity(0.55), label: "RAG chunk search")
             }
             .font(.caption2)
             .foregroundStyle(.secondary)
@@ -3562,37 +3567,69 @@ private struct LatencyBreakdownBar: View {
         .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
     }
 
-    private func row(label: String, color: Color, embed: Double, search: Double, searchName: String) -> some View {
-        let total = embed + search
-        return VStack(alignment: .leading, spacing: 3) {
+    private var epicRow: some View {
+        VStack(alignment: .leading, spacing: 3) {
             HStack(spacing: 10) {
-                Text(label)
+                Text("EPIC-RAG")
                     .font(.caption.weight(.bold))
-                    .foregroundStyle(color)
+                    .foregroundStyle(.teal)
                     .frame(width: 76, alignment: .leading)
 
                 GeometryReader { geo in
                     HStack(spacing: 1) {
-                        Rectangle()
-                            .fill(Color.gray.opacity(0.5))
-                            .frame(width: geo.size.width * (embed / maxTotal))
-                        Rectangle()
-                            .fill(color.opacity(0.55))
-                            .frame(width: geo.size.width * (search / maxTotal))
+                        Rectangle().fill(Color.gray.opacity(0.5))
+                            .frame(width: geo.size.width * (embedMs / maxTotal))
+                        Rectangle().fill(Color.purple.opacity(0.55))
+                            .frame(width: geo.size.width * (steerMs / maxTotal))
+                        Rectangle().fill(Color.teal.opacity(0.55))
+                            .frame(width: geo.size.width * (epicSearchMs / maxTotal))
                         Spacer(minLength: 0)
                     }
                     .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
                 }
                 .frame(height: 16)
 
-                Text(String(format: "%.1f ms", total))
+                Text(String(format: "%.1f ms", epicTotal))
                     .font(.caption.monospacedDigit().weight(.semibold))
                     .frame(width: 60, alignment: .trailing)
             }
-            Text(String(format: "↳ %@: %.1f ms", searchName, search))
-                .font(.caption2.weight(.semibold))
-                .foregroundStyle(color)
-                .padding(.leading, 86)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(String(format: "↳ query steering: %.1f ms · instruction search: %.1f ms", steerMs, epicSearchMs))
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(.teal)
+                if let pref = matchedPreference {
+                    Text("↳ steered toward: \"\(pref)\"")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+            }
+            .padding(.leading, 86)
+        }
+    }
+
+    private var ragRow: some View {
+        HStack(spacing: 10) {
+            Text("Plain RAG")
+                .font(.caption.weight(.bold))
+                .foregroundStyle(.orange)
+                .frame(width: 76, alignment: .leading)
+
+            GeometryReader { geo in
+                HStack(spacing: 1) {
+                    Rectangle().fill(Color.gray.opacity(0.5))
+                        .frame(width: geo.size.width * (embedMs / maxTotal))
+                    Rectangle().fill(Color.orange.opacity(0.55))
+                        .frame(width: geo.size.width * (ragSearchMs / maxTotal))
+                    Spacer(minLength: 0)
+                }
+                .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
+            }
+            .frame(height: 16)
+
+            Text(String(format: "%.1f ms", ragTotal))
+                .font(.caption.monospacedDigit().weight(.semibold))
+                .frame(width: 60, alignment: .trailing)
         }
     }
 

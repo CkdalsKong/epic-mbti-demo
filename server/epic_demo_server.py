@@ -159,6 +159,10 @@ class DemoSession:
         self.rag_index_bytes: int = 0
         # All preferences (for eval query)
         self.preferences: list[str] = []
+        # Cached preference embeddings, aligned to self.preferences — used to
+        # steer the query vector toward the persona's top-matching preference
+        # before searching the EPIC instruction index.
+        self.preference_vectors: np.ndarray | None = None
 
 
 class EPICDemoState:
@@ -414,6 +418,27 @@ def evaluate_single(state: EPICDemoState, question: str, preference: str, respon
 
 # ── Retrieval ─────────────────────────────────────────────────────────────
 
+def epic_steer_query(session: DemoSession, q_vec: np.ndarray) -> tuple[np.ndarray, str | None, float]:
+    """EPIC query steering: compare the query to the persona's preference
+    embeddings, take the top-1 match, and fold it into the query vector
+    before searching the instruction index. Returns (steered_vec, matched
+    preference text, match score). Falls back to the raw query vector if
+    there are no cached preference embeddings.
+    """
+    if session.preference_vectors is None or session.preference_vectors.shape[0] == 0:
+        return q_vec, None, 0.0
+    sims = session.preference_vectors @ q_vec[0]          # (P,)
+    top_idx = int(np.argmax(sims))
+    top_pref_vec = session.preference_vectors[top_idx]
+    steered = q_vec[0] + top_pref_vec
+    norm = np.linalg.norm(steered)
+    if norm > 0:
+        steered = steered / norm
+    steered_vec = steered.reshape(1, -1).astype("float32")
+    matched_pref = session.preferences[top_idx] if top_idx < len(session.preferences) else None
+    return steered_vec, matched_pref, float(sims[top_idx])
+
+
 def epic_search(session: DemoSession, q_vec: np.ndarray, top_k: int = 5) -> list[dict]:
     """Search the EPIC instruction index given an already-computed query vector."""
     if session.epic_index is None or session.epic_index.ntotal == 0:
@@ -446,7 +471,8 @@ def rag_search(session: DemoSession, q_vec: np.ndarray, top_k: int = 5) -> list[
 
 def epic_retrieve(state: EPICDemoState, session: DemoSession, question: str, top_k: int = 5) -> list[dict]:
     q_vec = state.encoder.encode([question])
-    return epic_search(session, q_vec, top_k)
+    steered_vec, _, _ = epic_steer_query(session, q_vec)
+    return epic_search(session, steered_vec, top_k)
 
 
 def rag_retrieve(state: EPICDemoState, session: DemoSession, question: str, top_k: int = 5) -> list[dict]:
@@ -590,6 +616,9 @@ class EPICDemoHandler(BaseHTTPRequestHandler):
             session.rag_chunks = rag_chunks
             session.rag_index_bytes = rag_index_bytes
             session.preferences = preferences_raw
+            session.preference_vectors = (
+                state.encoder.encode(preferences_raw) if preferences_raw else None
+            )
             state.session = session
 
             write_event({
@@ -768,6 +797,9 @@ class EPICDemoHandler(BaseHTTPRequestHandler):
         session.rag_chunks = rag_chunks
         session.rag_index_bytes = meta.get("rag_index_bytes", 0)
         session.preferences = meta.get("preferences", [])
+        session.preference_vectors = (
+            state.encoder.encode(session.preferences) if session.preferences else None
+        )
 
         with state._lock:
             state._session = session
@@ -803,12 +835,19 @@ class EPICDemoHandler(BaseHTTPRequestHandler):
         q_vec = state.encoder.encode([question])
         embed_ms = (time.time() - t0) * 1000
 
-        # Step 2a: EPIC — search the (small) preference-steered instruction index
+        # Step 2: EPIC query steering — match the query against the persona's
+        # preference embeddings, fold the top-1 preference into the query
+        # vector. This is EPIC-only; Plain RAG searches the raw query vector.
         t0 = time.time()
-        epic_docs = epic_search(session, q_vec, top_k)
+        steered_vec, matched_pref, steer_score = epic_steer_query(session, q_vec)
+        steer_ms = (time.time() - t0) * 1000
+
+        # Step 3a: EPIC — search the (small) instruction index with the steered vector
+        t0 = time.time()
+        epic_docs = epic_search(session, steered_vec, top_k)
         epic_search_ms = (time.time() - t0) * 1000
 
-        # Step 2b: RAG — search the (large) raw chunk index
+        # Step 3b: RAG — search the (large) raw chunk index with the raw query vector
         t0 = time.time()
         rag_docs = rag_search(session, q_vec, top_k)
         rag_search_ms = (time.time() - t0) * 1000
@@ -816,12 +855,15 @@ class EPICDemoHandler(BaseHTTPRequestHandler):
         self.write_json({
             "epic_docs": epic_docs,
             "rag_docs": rag_docs,
-            # Breakdown: embedding is shared, search is per-system
+            # Breakdown: embedding is shared; steering is EPIC-only; search is per-system
             "embed_ms": round(embed_ms, 1),
+            "steer_ms": round(steer_ms, 1),
+            "matched_preference": matched_pref,
+            "steer_score": round(steer_score, 3),
             "epic_search_ms": round(epic_search_ms, 1),
             "rag_search_ms": round(rag_search_ms, 1),
-            # Totals (embed + search) — kept for backward compatibility
-            "epic_retr_ms": round(embed_ms + epic_search_ms, 1),
+            # Totals — kept for backward compatibility
+            "epic_retr_ms": round(embed_ms + steer_ms + epic_search_ms, 1),
             "rag_retr_ms": round(embed_ms + rag_search_ms, 1),
             "epic_index_bytes": session.epic_index_bytes,
             "rag_index_bytes": session.rag_index_bytes,

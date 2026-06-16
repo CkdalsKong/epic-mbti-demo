@@ -243,9 +243,12 @@ final class GenerationRuntime {
         let epicDocs: [RetrievedDoc]
         let ragDocs: [RetrievedDoc]
         let embedMs: Double          // shared query-embedding step
-        let epicSearchMs: Double     // EPIC instruction index search
-        let ragSearchMs: Double      // RAG chunk index search
-        let epicRetrMs: Double       // embed + epicSearch (total)
+        let steerMs: Double          // EPIC-only: fold top-1 preference into the query vector
+        let matchedPreference: String?
+        let steerScore: Double
+        let epicSearchMs: Double     // EPIC instruction index search (with steered vector)
+        let ragSearchMs: Double      // RAG chunk index search (raw vector)
+        let epicRetrMs: Double       // embed + steer + epicSearch (total)
         let ragRetrMs: Double        // embed + ragSearch (total)
         let epicIndexBytes: Int
         let ragIndexBytes: Int
@@ -277,6 +280,9 @@ final class GenerationRuntime {
             let epicDocs: [RetrievedDoc]
             let ragDocs: [RetrievedDoc]
             let embedMs: Double
+            let steerMs: Double
+            let matchedPreference: String?
+            let steerScore: Double
             let epicSearchMs: Double
             let ragSearchMs: Double
             let epicRetrMs: Double
@@ -289,6 +295,7 @@ final class GenerationRuntime {
             enum CodingKeys: String, CodingKey {
                 case epicDocs = "epic_docs", ragDocs = "rag_docs"
                 case embedMs = "embed_ms"
+                case steerMs = "steer_ms", matchedPreference = "matched_preference", steerScore = "steer_score"
                 case epicSearchMs = "epic_search_ms", ragSearchMs = "rag_search_ms"
                 case epicRetrMs = "epic_retr_ms", ragRetrMs = "rag_retr_ms"
                 case epicIndexBytes = "epic_index_bytes", ragIndexBytes = "rag_index_bytes"
@@ -298,7 +305,9 @@ final class GenerationRuntime {
         let p = try JSONDecoder().decode(Payload.self, from: data)
         return RetrieveOnlyResult(
             epicDocs: p.epicDocs, ragDocs: p.ragDocs,
-            embedMs: p.embedMs, epicSearchMs: p.epicSearchMs, ragSearchMs: p.ragSearchMs,
+            embedMs: p.embedMs,
+            steerMs: p.steerMs, matchedPreference: p.matchedPreference, steerScore: p.steerScore,
+            epicSearchMs: p.epicSearchMs, ragSearchMs: p.ragSearchMs,
             epicRetrMs: p.epicRetrMs, ragRetrMs: p.ragRetrMs,
             epicIndexBytes: p.epicIndexBytes, ragIndexBytes: p.ragIndexBytes,
             epicEntries: p.epicEntries, ragChunks: p.ragChunks
