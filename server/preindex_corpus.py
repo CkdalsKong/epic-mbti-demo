@@ -2,6 +2,23 @@
 """
 Pre-index the full corpus for all 57 PrefWiki personas.
 
+This faithfully replicates the real EPIC indexing pipeline (EPIC_indexing.py
++ EPIC_utils.py), not a simplified approximation:
+
+  1. Coarse cosine filter — a chunk is kept if it exceeds --coarse-threshold
+     against ANY persona preference. Unlike a naive "best match" filter, we
+     track *every* preference that matched (not just the top-1), because
+     step 2 only shows the LLM the preferences that already passed here.
+  2. Fine LLM filtering — uses the actual filtering_systemprompt.txt /
+     filtering_userprompt.txt (XML decision/reason/relevant_preferences),
+     shown only the chunk's coarse-matched preferences (shuffled, seeded by
+     chunk index, exactly like EPIC_utils.process_chunk_rand_prefs).
+  3. Instruction generation — a SEPARATE LLM call using
+     instruction_systemprompt.txt / instruction_userprompt.txt, fed the
+     filtering step's <reason> plus the matched preferences. This is what
+     actually gets embedded into the EPIC FAISS index — not the filtering
+     decision, not the raw chunk.
+
 Run once on H200 before the demo:
 
   python preindex_corpus.py \
@@ -16,24 +33,27 @@ Each row in corpus.jsonl must have at least:
 
 Output layout:
   preindex/
+    chunk_vectors.npy        # shared corpus embeddings (cached across personas)
+    rag_index.faiss          # shared RAG (raw chunk) FAISS index
+    rag_chunks.json          # shared RAG chunk metadata
     persona_0/
-      epic_index.faiss
-      epic_entries.json      # [{chunk_text, article_title, instruction, preference, score}]
-      rag_index.faiss
-      rag_chunks.json        # [{chunk_text, article_title}]
-      meta.json              # {persona_index, epic_entries, rag_chunks, epic_index_bytes, rag_index_bytes}
+      epic_index.faiss       # this persona's EPIC instruction index
+      epic_entries.json      # [{chunk_text, article_title, instruction, preference, reason, score}]
+      meta.json              # {persona_index, epic_entries, rag_chunks, epic_index_bytes, rag_index_bytes, rag_index_path}
     persona_1/ ...
 """
 
 import argparse
 import json
 import os
+import random
 import re
 import sys
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any
 
+from bs4 import BeautifulSoup
 from tqdm import tqdm
 
 import faiss
@@ -44,7 +64,80 @@ sys.path.insert(0, os.path.dirname(__file__))
 from epic_runtime import ContrieverEncoder, CONTRIEVER_MODEL
 import urllib.request
 
-# ── Helpers ────────────────────────────────────────────────────────────────
+PROMPT_DIR = os.path.join(os.path.dirname(__file__), "prompts")
+
+
+def load_prompt(name: str) -> str:
+    with open(os.path.join(PROMPT_DIR, name), "r", encoding="utf-8") as f:
+        return f.read()
+
+
+FILTERING_SYSTEM = load_prompt("filtering_systemprompt.txt")
+FILTERING_USER = load_prompt("filtering_userprompt.txt")
+INSTRUCTION_SYSTEM = load_prompt("instruction_systemprompt.txt")
+INSTRUCTION_USER = load_prompt("instruction_userprompt.txt")
+
+
+def fill_template(template: str, **kwargs: str) -> str:
+    """Same as EPIC_utils.format_prompt — plain string replace, not
+    str.format(), so curly braces inside chunk text don't break it."""
+    out = template
+    for key, value in kwargs.items():
+        out = out.replace("{" + key + "}", value)
+    return out
+
+
+# ── XML response parsing (matches EPIC_utils.py exactly) ───────────────────
+
+def clean_preference_text(text: str) -> str:
+    if not text:
+        return ""
+    text = text.strip()
+    if text.replace(",", "").replace(" ", "").isdigit():
+        return text
+    text = re.sub(r"^Preference\s+\d+:\s*", "", text, flags=re.IGNORECASE)
+    text = re.sub(r"^\d+\.\s*", "", text)
+    text = text.strip("\"'")
+    return text.strip()
+
+
+def parse_decision_and_reason_preferences(text: str) -> tuple[str, str, list[str]]:
+    soup = BeautifulSoup(text, "html.parser")
+    decision_tag = soup.find("decision")
+    reason_tag = soup.find("reason")
+    preference_tags = soup.find_all("preference")
+    decision = decision_tag.text.strip() if decision_tag else ""
+    reason = reason_tag.text.strip() if reason_tag else ""
+    preferences = [t.text.strip() for t in preference_tags if t.text.strip()]
+    preferences = [clean_preference_text(p) for p in preferences]
+    return decision, reason, preferences
+
+
+def map_preference_numbers_to_text(pref_text: str, preference_list: list[str]) -> str:
+    """If the LLM answered with a number (e.g. '2') instead of the literal
+    preference text, map it back using the SAME (shuffled) list that was
+    shown to it in the prompt."""
+    if not pref_text or not preference_list:
+        return pref_text
+    numbers = re.findall(r"\d+", pref_text)
+    if not numbers:
+        return pref_text
+    mapped = []
+    for num in numbers:
+        idx = int(num) - 1
+        mapped.append(preference_list[idx] if 0 <= idx < len(preference_list) else num)
+    return "; ".join(mapped) if mapped else pref_text
+
+
+def parse_instruction(text: str) -> str | None:
+    soup = BeautifulSoup(text, "html.parser")
+    tag = soup.find("instruction")
+    if tag:
+        return tag.text.strip()
+    return text.strip() if text else None
+
+
+# ── Corpus / persona loading ─────────────────────────────────────────────
 
 def load_corpus(path: str) -> list[dict]:
     """Load a JSONL corpus.
@@ -62,10 +155,8 @@ def load_corpus(path: str) -> list[dict]:
             if not line:
                 continue
             obj = json.loads(line)
-            # Prefer raw_text for LLM display, fall back to text
             display_text = obj.get("raw_text") or obj["text"]
-            embed_text = obj["text"]   # contextual chunk for embedding
-            # Build a human-readable title
+            embed_text = obj["text"]
             title = (
                 obj.get("title")
                 or obj.get("article_title")
@@ -74,7 +165,7 @@ def load_corpus(path: str) -> list[dict]:
             )
             chunks.append({
                 "index": i,
-                "text": embed_text,        # used for Contriever embedding + LLM context
+                "text": embed_text,
                 "display_text": display_text,
                 "article_title": title,
             })
@@ -86,11 +177,11 @@ def load_prefwiki(path: str) -> list[dict]:
         return json.load(f)
 
 
-def chat_completion(llm_url: str, model: str, messages: list[dict], timeout: int = 120) -> str:
+def chat_completion(llm_url: str, model: str, messages: list[dict], max_tokens: int = 512, timeout: int = 120) -> str:
     payload = json.dumps({
         "model": model,
         "messages": messages,
-        "max_tokens": 256,
+        "max_tokens": max_tokens,
         "temperature": 0.0,
     }).encode("utf-8")
     req = urllib.request.Request(
@@ -102,48 +193,70 @@ def chat_completion(llm_url: str, model: str, messages: list[dict], timeout: int
     with urllib.request.urlopen(req, timeout=timeout) as resp:
         data = json.load(resp)
     content = data["choices"][0]["message"]["content"].strip()
-    # Strip <think>...</think> blocks in case thinking mode is still active
+    # Strip <think>...</think> blocks in case a reasoning model leaks them
     content = re.sub(r"<think>.*?</think>", "", content, flags=re.DOTALL).strip()
     return content
 
 
-FINE_SYSTEM = (
-    "You are a strict preference alignment filter. "
-    "Respond with EXACTLY one line — no preamble, no explanation:\n"
-    "  KEEP: <one concise instruction on how to use this chunk>\n"
-    "  DISCARD\n"
-    "Output nothing else."
-)
+# ── Step 2: fine LLM filtering (real filtering prompt) ──────────────────────
 
-
-def fine_verify_chunk(
-    chunk: dict,
-    preferences: list[str],
+def fine_filter_chunk(
+    chunk_idx: int,
+    chunk_text: str,
+    relevant_prefs: list[str],
     llm_url: str,
     model: str,
     timeout: int,
 ) -> dict | None:
-    pref_text = "\n".join(f"- {p}" for p in preferences)
-    user_msg = (
-        f"Preferences:\n{pref_text}\n\n"
-        f"Chunk:\n{chunk['text'][:800]}\n\n"
-        "KEEP or DISCARD?"
-    )
+    """Returns {"reason": str, "relevant_preferences": [str]} if Keep, else None."""
+    shuffled = relevant_prefs[:]
+    random.Random(chunk_idx).shuffle(shuffled)
+    preference_text = "\n".join(f"{i+1}. '{p}'" for i, p in enumerate(shuffled))
+    user_prompt = fill_template(FILTERING_USER, preference=preference_text, chunk=chunk_text)
+
     try:
-        reply = chat_completion(llm_url, model, [
-            {"role": "system", "content": FINE_SYSTEM},
-            {"role": "user", "content": user_msg},
-        ], timeout=timeout)
+        reply = chat_completion(
+            llm_url, model,
+            [{"role": "system", "content": FILTERING_SYSTEM}, {"role": "user", "content": user_prompt}],
+            max_tokens=512, timeout=timeout,
+        )
     except Exception as e:
-        print(f"\n  LLM error chunk {chunk['index']}: {e}", flush=True)
+        print(f"\n  [filter] LLM error chunk {chunk_idx}: {e}", flush=True)
         return None
 
-    # Match KEEP anywhere in the reply (handles stray preamble)
-    m = re.search(r"KEEP\s*:\s*(.+)", reply, re.IGNORECASE)
-    if m:
-        instruction = m.group(1).strip() or "Use this chunk for preference-aligned answers."
-        return {"instruction": instruction}
-    return None
+    decision, reason, preferences = parse_decision_and_reason_preferences(reply)
+    preferences = [map_preference_numbers_to_text(p, shuffled) for p in preferences]
+
+    if decision.strip().lower() != "keep":
+        return None
+    if not preferences:
+        preferences = shuffled[:1]  # fallback: keep at least the top coarse match
+    return {"reason": reason, "relevant_preferences": preferences}
+
+
+# ── Step 3: instruction generation (real instruction prompt) ───────────────
+
+def generate_instruction(
+    chunk_text: str,
+    relevant_preferences: list[str],
+    reason: str,
+    llm_url: str,
+    model: str,
+    timeout: int,
+) -> str | None:
+    preference_text = "\n".join(f"- {p}" for p in relevant_preferences)
+    user_prompt = fill_template(INSTRUCTION_USER, preference=preference_text, chunk=chunk_text, reason=reason)
+
+    try:
+        reply = chat_completion(
+            llm_url, model,
+            [{"role": "system", "content": INSTRUCTION_SYSTEM}, {"role": "user", "content": user_prompt}],
+            max_tokens=256, timeout=timeout,
+        )
+    except Exception as e:
+        print(f"\n  [instruction] LLM error: {e}", flush=True)
+        return None
+    return parse_instruction(reply)
 
 
 def build_faiss_flat(vectors: np.ndarray) -> faiss.IndexFlatIP:
@@ -175,13 +288,13 @@ def main() -> int:
     parser.add_argument("--prefwiki", required=True, help="Path to PrefWiki.json")
     parser.add_argument("--out-dir",  default="./preindex", help="Output directory for indexes")
     parser.add_argument("--personas", default="0-56", help="Personas to index, e.g. '0-56' or '0,3,7'")
-    parser.add_argument("--llm-model",      default="Qwen/Qwen3-8B")
+    parser.add_argument("--llm-model",      default="meta-llama/Llama-3.1-8B-Instruct")
     parser.add_argument("--llm-server-url", default="http://127.0.0.1:8008")
     parser.add_argument("--llm-timeout",    type=int, default=120)
     parser.add_argument("--coarse-threshold", type=float, default=0.35,
                         help="Cosine sim threshold for coarse filter (higher = fewer candidates for LLM)")
     parser.add_argument("--top-prefs",  type=int, default=10, help="How many preference blocks to use per persona")
-    parser.add_argument("--workers",    type=int, default=32, help="Parallel LLM workers for fine verification")
+    parser.add_argument("--workers",    type=int, default=32, help="Parallel LLM workers for fine filtering")
     parser.add_argument("--resume",     action="store_true", help="Skip personas that already have meta.json")
     args = parser.parse_args()
 
@@ -212,8 +325,7 @@ def main() -> int:
             rag_chunks = json.load(f)
         rag_index_bytes = len(faiss.serialize_index(rag_index))
         print(f"  Loaded {len(chunk_vectors)} vectors, RAG index {rag_index_bytes/1e6:.1f} MB", flush=True)
-        # Still need encoder for per-persona instruction embedding
-        print("Loading Contriever (for instruction embedding)...", flush=True)
+        print("Loading Contriever (for preference/instruction embedding)...", flush=True)
         encoder = ContrieverEncoder(CONTRIEVER_MODEL)
         encoder.encode(["warmup"])
         print(f"  Contriever ready (dim={encoder.dimension})", flush=True)
@@ -235,7 +347,6 @@ def main() -> int:
         np.save(cache_vec, chunk_vectors)
         print(f"  Saved {cache_vec}", flush=True)
 
-        # Build shared RAG index and cache it too
         rag_index = build_faiss_flat(chunk_vectors)
         rag_index_bytes = len(faiss.serialize_index(rag_index))
         rag_chunks = [{"chunk_text": c.get("display_text", c["text"]), "article_title": c["article_title"]} for c in chunks]
@@ -259,49 +370,60 @@ def main() -> int:
         preferences = [b["preference"] for b in pref_blocks]
         print(f"\n[{pi}] {len(preferences)} preferences | {len(chunks)} chunks", flush=True)
 
-        # Encode preferences
         pref_vectors = encoder.encode(preferences)  # (P, D)
 
-        # ── Coarse filter ──────────────────────────────────────────────────
+        # ── Step 1: coarse cosine filter — track EVERY matching preference ──
         print(f"  Coarse filter (threshold={args.coarse_threshold})...", flush=True)
-        # cosine similarity: chunk_vectors @ pref_vectors.T → (N, P)
-        sim = chunk_vectors @ pref_vectors.T  # already L2-normalized by ContrieverEncoder
-        max_scores = sim.max(axis=1)          # (N,)
-        best_pref_idx = sim.argmax(axis=1)    # (N,)
-        coarse_mask = max_scores >= args.coarse_threshold
+        sim = chunk_vectors @ pref_vectors.T            # (N, P), already L2-normalized
+        above = sim >= args.coarse_threshold            # (N, P) boolean
+        coarse_mask = above.any(axis=1)
         coarse_indices = np.where(coarse_mask)[0]
         print(f"  Coarse kept: {len(coarse_indices)}/{len(chunks)}", flush=True)
 
-        # ── Fine LLM verification (parallel) ──────────────────────────────
-        print(f"  Fine verification via LLM ({args.llm_model}), workers={args.workers}...", flush=True)
+        # ── Step 2 + 3: fine LLM filter, then instruction generation ───────
+        print(f"  Fine filtering + instruction generation via LLM ({args.llm_model}), workers={args.workers}...", flush=True)
         epic_entries = []
 
-        def verify_one(ci: int):
+        def process_one(ci: int):
             chunk = chunks[ci]
-            result = fine_verify_chunk(chunk, preferences, args.llm_server_url, args.llm_model, args.llm_timeout)
-            return ci, result
+            matched_idx = np.where(above[ci])[0]
+            relevant_prefs = [preferences[k] for k in matched_idx]
+            best_score = float(sim[ci, matched_idx].max())
+            chunk_text = chunk.get("display_text", chunk["text"])
 
-        with tqdm(total=len(coarse_indices), desc=f"  p{pi} fine-verify", unit="chunk", dynamic_ncols=True) as pbar:
+            filt = fine_filter_chunk(ci, chunk_text, relevant_prefs, args.llm_server_url, args.llm_model, args.llm_timeout)
+            if filt is None:
+                return None
+
+            instruction = generate_instruction(
+                chunk_text, filt["relevant_preferences"], filt["reason"],
+                args.llm_server_url, args.llm_model, args.llm_timeout,
+            )
+            if not instruction:
+                return None
+
+            return {
+                "chunk_text": chunk_text,
+                "article_title": chunk["article_title"],
+                "instruction": instruction,
+                "preference": "; ".join(filt["relevant_preferences"]),
+                "reason": filt["reason"],
+                "score": best_score,
+            }
+
+        with tqdm(total=len(coarse_indices), desc=f"  p{pi} filter+instruct", unit="chunk", dynamic_ncols=True) as pbar:
             with ThreadPoolExecutor(max_workers=args.workers) as ex:
-                futures = {ex.submit(verify_one, int(ci)): int(ci) for ci in coarse_indices}
+                futures = {ex.submit(process_one, int(ci)): int(ci) for ci in coarse_indices}
                 for fut in as_completed(futures):
-                    ci, result = fut.result()
-                    if result:
-                        best_pref = preferences[best_pref_idx[ci]]
-                        chunk = chunks[ci]
-                        epic_entries.append({
-                            "chunk_text": chunk.get("display_text", chunk["text"]),
-                            "article_title": chunk["article_title"],
-                            "instruction": result["instruction"],
-                            "preference": best_pref,
-                            "score": float(max_scores[ci]),
-                        })
+                    entry = fut.result()
+                    if entry:
+                        epic_entries.append(entry)
                     pbar.set_postfix(kept=len(epic_entries))
                     pbar.update(1)
 
         print(f"  EPIC entries: {len(epic_entries)}", flush=True)
 
-        # ── Build EPIC FAISS index ─────────────────────────────────────────
+        # ── Build EPIC FAISS index over the generated INSTRUCTIONS ─────────
         epic_index_bytes = 0
         if epic_entries:
             instr_texts = [e["instruction"] for e in epic_entries]
@@ -311,7 +433,6 @@ def main() -> int:
             faiss.write_index(epic_index, os.path.join(out_dir, "epic_index.faiss"))
             print(f"  EPIC index: {epic_index_bytes/1e6:.1f} MB", flush=True)
         else:
-            # Write empty index
             empty = faiss.IndexFlatIP(encoder.dimension)
             faiss.write_index(empty, os.path.join(out_dir, "epic_index.faiss"))
 

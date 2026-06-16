@@ -67,14 +67,29 @@ python preindex_corpus.py \
   --resume
 ```
 
-For each of the 57 PrefWiki personas: coarse cosine filter against the
-cached embeddings, then parallel LLM fine-verification (`--workers` threads
-hitting vLLM concurrently — vLLM batches these internally, so 32–128 is
-reasonable depending on GPU headroom). Re-uses `embed_corpus.py`'s cache if
-present, otherwise encodes the corpus itself first.
+This faithfully replicates the real indexing pipeline
+(`EPIC_indexing.py` + `EPIC_utils.py`), not a simplified stand-in:
+
+1. **Coarse cosine filter** — a chunk is kept if it exceeds
+   `--coarse-threshold` against *any* preference. Every preference that
+   matched is tracked (not just the best one), because step 2 only shows
+   the LLM the preferences that already passed here.
+2. **Fine LLM filtering** — uses the actual `prompts/filtering_*.txt`
+   templates (XML `<decision>`/`<reason>`/`<relevant_preferences>`), shown
+   only the chunk's coarse-matched preferences, shuffled with a seed derived
+   from the chunk index (matches `process_chunk_rand_prefs` exactly).
+3. **Instruction generation** — a *separate* LLM call using
+   `prompts/instruction_*.txt`, fed the filtering step's `<reason>` plus the
+   matched preferences. This generated instruction — not the raw chunk — is
+   what gets embedded into the EPIC FAISS index.
+
+Each kept chunk costs 2 LLM calls (filter, then instruction) instead of 1.
+`--workers` threads hit vLLM concurrently (vLLM batches internally, so
+32–128 is reasonable depending on GPU headroom).
 
 `--resume` skips personas that already have a `meta.json` (useful for
-re-running after a partial failure or to add more personas later).
+re-running after a partial failure or to add more personas later — delete
+a `persona_N/` dir to force that one to rebuild).
 
 Output layout:
 
@@ -85,7 +100,7 @@ preindex/
   rag_chunks.json          # shared RAG chunk metadata
   persona_0/
     epic_index.faiss       # this persona's EPIC instruction index
-    epic_entries.json      # chunk_text, article_title, instruction, preference per entry
+    epic_entries.json      # chunk_text, article_title, instruction, preference, reason per entry
     meta.json              # counts, byte sizes, rag_index_path (points at the shared file above)
   persona_1/ ...
   persona_56/ ...
@@ -135,3 +150,8 @@ H200 (140 GB) alongside the 8B model.
 - `epic_demo_server.py` — this HTTP server.
 - `embed_corpus.py` — multi-GPU corpus embedding (step 1 above).
 - `preindex_corpus.py` — per-persona EPIC indexing over the cached embeddings (step 2 above).
+- `prompts/` — the real filtering and instruction-generation prompts, copied
+  verbatim from the EPIC pipeline (`filtering_systemprompt.txt`,
+  `filtering_userprompt.txt`, `instruction_systemprompt.txt`,
+  `instruction_userprompt.txt`). `preindex_corpus.py` loads these directly —
+  don't edit them without checking they still match the upstream pipeline.

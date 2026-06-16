@@ -13,3 +13,5 @@ numpy>=1.26,<3
 torch>=2.2
 transformers>=4.41
 faiss-cpu>=1.8
+tqdm>=4.66
+beautifulsoup4>=4.12   # XML parsing for preindex_corpus.py's filtering/instruction prompts
